@@ -118,6 +118,15 @@ body {
 }
 .ghost-btn:hover { color: var(--text); border-color: var(--gold); }
 
+.error-banner {
+  background: rgba(194, 91, 82, 0.12);
+  border-bottom: 1px solid var(--brick);
+  color: var(--brick);
+  font-size: 0.85rem;
+  padding: 10px 20px;
+  text-align: center;
+}
+
 /* ---------- Layout ---------- */
 main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 60px; }
 

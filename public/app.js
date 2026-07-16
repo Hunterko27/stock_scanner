@@ -11,17 +11,25 @@ const elAll = (sel, root = document) => root.querySelectorAll(sel);
 
 async function loadLists() {
   const res = await fetch('/api/lists');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ? `Could not load your lists: ${err.error}` : 'Could not load your lists.');
+  }
   const data = await res.json();
   state.watchlist = data.watchlist || [];
   state.scanlist = data.scanlist || [];
 }
 
 async function saveLists() {
-  await fetch('/api/lists', {
+  const res = await fetch('/api/lists', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ watchlist: state.watchlist, scanlist: state.scanlist }),
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ? `Could not save your lists: ${err.error}` : 'Could not save your lists — changes may not persist.');
+  }
 }
 
 async function scanSymbol(symbol) {
@@ -94,7 +102,7 @@ function renderTimeframePanel(panelEl, tf) {
     <div class="metric-row"><span>Price</span><span>$${tf.price}</span></div>
     <div class="metric-row"><span>RSI (14)</span><span>${tf.rsi ?? '—'}</span></div>
     <div class="metric-row"><span>Bollinger</span><span>${tf.bollinger ? `${tf.bollinger.lower} – ${tf.bollinger.upper}` : '—'}</span></div>
-    <div class="metric-row"><span>SMA20 / SMA50</span><span>${tf.sma20 ?? '—'} / ${tf.sma50 ?? '—'}</span></div>
+    <div class="metric-row"><span>SMA20 / SMA50 / SMA200</span><span>${tf.sma20 ?? '—'} / ${tf.sma50 ?? '—'} / ${tf.sma200 ?? '—'}</span></div>
     <div class="metric-row"><span>Fib golden zone</span><span>${tf.fib ? `${tf.fib.goldenLow.toFixed(2)} – ${tf.fib.goldenHigh.toFixed(2)}` : '—'}</span></div>
     <div class="signal-chips"></div>
   `;
@@ -230,18 +238,38 @@ async function renderAll() {
   ]);
 }
 
+function showError(message) {
+  const banner = el('#error-banner');
+  banner.textContent = message;
+  banner.hidden = false;
+}
+
+function clearError() {
+  el('#error-banner').hidden = true;
+}
+
 async function addSymbol(symbol, target) {
   const sym = symbol.trim().toUpperCase();
   if (!sym) return;
   const list = state[target];
   if (!list.includes(sym)) list.push(sym);
-  await saveLists();
+  try {
+    await saveLists();
+    clearError();
+  } catch (err) {
+    showError(err.message);
+  }
   await renderAll();
 }
 
 async function removeSymbol(symbol, target) {
   state[target] = state[target].filter((s) => s !== symbol);
-  await saveLists();
+  try {
+    await saveLists();
+    clearError();
+  } catch (err) {
+    showError(err.message);
+  }
   await renderAll();
 }
 
@@ -259,6 +287,11 @@ function wireForm() {
 
 (async function init() {
   wireForm();
-  await loadLists();
+  try {
+    await loadLists();
+    clearError();
+  } catch (err) {
+    showError(err.message);
+  }
   await renderAll();
 })();

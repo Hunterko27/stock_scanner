@@ -7,7 +7,7 @@ const yahooFinance = new YahooFinance({ queue: { concurrency: 4, interval: 250 }
 
 // Yahoo has no native 4h interval, so we pull hourly candles and
 // aggregate every 4 hours ourselves.
-async function fetchHourlyCandles(symbol, days = 180) {
+async function fetchHourlyCandles(symbol, days = 250) {
   const period2 = new Date();
   const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const result = await yahooFinance.chart(symbol, {
@@ -139,12 +139,15 @@ function analyzeTimeframe(candles, fibLookback) {
   const bbValues = BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
   const sma20Values = SMA.calculate({ values: closes, period: 20 });
   const sma50Values = SMA.calculate({ values: closes, period: Math.min(50, Math.floor(closes.length / 2)) });
+  const hasEnoughFor200 = closes.length >= 210;
+  const sma200Values = hasEnoughFor200 ? SMA.calculate({ values: closes, period: 200 }) : [];
 
   const price = closes[closes.length - 1];
   const rsi = rsiValues[rsiValues.length - 1];
   const bb = bbValues[bbValues.length - 1];
   const sma20 = sma20Values[sma20Values.length - 1];
   const sma50 = sma50Values[sma50Values.length - 1];
+  const sma200 = sma200Values.length ? sma200Values[sma200Values.length - 1] : null;
   const fib = computeFibZone(candles, fibLookback);
 
   // ---- Component scoring (each contributes to a 0-100 opportunity score) ----
@@ -181,6 +184,14 @@ function analyzeTimeframe(candles, fibLookback) {
     signals.push({ type: 'info', label: uptrendContext ? 'MA trend: bullish (20 > 50)' : 'MA trend: bearish (20 < 50)' });
   }
 
+  if (sma200 != null) {
+    if (price > sma200) {
+      score += 5; signals.push({ type: 'info', label: 'Above 200-day MA (long-term uptrend)' });
+    } else {
+      score -= 5; signals.push({ type: 'watch', label: 'Below 200-day MA (long-term downtrend)' });
+    }
+  }
+
   score = Math.max(0, Math.min(100, Math.round(score)));
 
   let label = 'Neutral';
@@ -195,6 +206,7 @@ function analyzeTimeframe(candles, fibLookback) {
     bollinger: bb ? { upper: Number(bb.upper.toFixed(2)), middle: Number(bb.middle.toFixed(2)), lower: Number(bb.lower.toFixed(2)) } : null,
     sma20: sma20 != null ? Number(sma20.toFixed(2)) : null,
     sma50: sma50 != null ? Number(sma50.toFixed(2)) : null,
+    sma200: sma200 != null ? Number(sma200.toFixed(2)) : null,
     fib,
     score,
     label,
@@ -205,7 +217,7 @@ function analyzeTimeframe(candles, fibLookback) {
 
 async function analyzeSymbol(symbol) {
   const [hourly, daily, weekly] = await Promise.all([
-    fetchHourlyCandles(symbol, 180),
+    fetchHourlyCandles(symbol, 250),
     fetchDailyCandles(symbol, 500),
     fetchWeeklyCandles(symbol, 1460),
   ]);
