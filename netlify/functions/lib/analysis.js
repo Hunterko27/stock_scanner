@@ -1,20 +1,32 @@
 const YahooFinance = require('yahoo-finance2').default;
 const { RSI, BollingerBands, SMA } = require('technicalindicators');
 
-const yahooFinance = new YahooFinance({ queue: { concurrency: 4, interval: 250 } });
+const yahooFinance = new YahooFinance({ queue: { concurrency: 2, interval: 400 } });
+
+// Wraps a promise so a hung/slow Yahoo request can never block the whole
+// function past Netlify's own execution limit — it fails fast with a clear
+// error instead of leaving the client waiting indefinitely.
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timed out fetching ${label}`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
 
 // ---------- Data fetching ----------
 
 // Yahoo has no native 4h interval, so we pull hourly candles and
-// aggregate every 4 hours ourselves.
-async function fetchHourlyCandles(symbol, days = 250) {
+// aggregate every 4 hours ourselves. 180 days comfortably covers 200+
+// four-hour bars for SMA200 while keeping the payload light.
+async function fetchHourlyCandles(symbol, days = 200) {
   const period2 = new Date();
   const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const result = await yahooFinance.chart(symbol, {
-    period1,
-    period2,
-    interval: '60m',
-  });
+  const result = await withTimeout(
+    yahooFinance.chart(symbol, { period1, period2, interval: '60m' }),
+    8000,
+    `${symbol} 4H data`
+  );
   return (result.quotes || []).filter(
     (q) => q.close != null && q.high != null && q.low != null
   );
@@ -23,11 +35,11 @@ async function fetchHourlyCandles(symbol, days = 250) {
 async function fetchDailyCandles(symbol, days = 500) {
   const period2 = new Date();
   const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const result = await yahooFinance.chart(symbol, {
-    period1,
-    period2,
-    interval: '1d',
-  });
+  const result = await withTimeout(
+    yahooFinance.chart(symbol, { period1, period2, interval: '1d' }),
+    8000,
+    `${symbol} daily data`
+  );
   return (result.quotes || []).filter(
     (q) => q.close != null && q.high != null && q.low != null
   );
@@ -36,11 +48,11 @@ async function fetchDailyCandles(symbol, days = 500) {
 async function fetchWeeklyCandles(symbol, days = 1460) {
   const period2 = new Date();
   const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const result = await yahooFinance.chart(symbol, {
-    period1,
-    period2,
-    interval: '1wk',
-  });
+  const result = await withTimeout(
+    yahooFinance.chart(symbol, { period1, period2, interval: '1wk' }),
+    8000,
+    `${symbol} weekly data`
+  );
   return (result.quotes || []).filter(
     (q) => q.close != null && q.high != null && q.low != null
   );
@@ -216,8 +228,11 @@ function analyzeTimeframe(candles, fibLookback) {
 }
 
 async function analyzeSymbol(symbol) {
+  // Each fetch has its own bounded timeout (see withTimeout above), so even
+  // in the worst case this resolves in a predictable window rather than
+  // hanging past Netlify's function time limit.
   const [hourly, daily, weekly] = await Promise.all([
-    fetchHourlyCandles(symbol, 250),
+    fetchHourlyCandles(symbol, 200),
     fetchDailyCandles(symbol, 500),
     fetchWeeklyCandles(symbol, 1460),
   ]);

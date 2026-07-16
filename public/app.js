@@ -9,6 +9,28 @@ const state = {
 const el = (sel, root = document) => root.querySelector(sel);
 const elAll = (sel, root = document) => root.querySelectorAll(sel);
 
+// Global concurrency limiter: at most N symbols scan at once, app-wide,
+// across both the watchlist and scan list. Yahoo's unofficial API throttles
+// or drops connections when too many requests land at once — this keeps us
+// well under that threshold instead of firing everything in one burst.
+const scanGate = { active: 0, limit: 3, queue: [] };
+function scheduleScan(task) {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      scanGate.active++;
+      task()
+        .then(resolve, reject)
+        .finally(() => {
+          scanGate.active--;
+          const next = scanGate.queue.shift();
+          if (next) next();
+        });
+    };
+    if (scanGate.active < scanGate.limit) run();
+    else scanGate.queue.push(run);
+  });
+}
+
 async function loadLists() {
   const res = await fetch('/api/lists');
   if (!res.ok) {
@@ -33,12 +55,21 @@ async function saveLists() {
 }
 
 async function scanSymbol(symbol) {
-  const res = await fetch(`/api/scan?symbol=${encodeURIComponent(symbol)}`);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || `Failed to scan ${symbol}`);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+  try {
+    const res = await fetch(`/api/scan?symbol=${encodeURIComponent(symbol)}`, { signal: controller.signal });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to scan ${symbol}`);
+    }
+    return await res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error(`${symbol} took too long to respond`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.json();
 }
 
 function scoreColor(score) {
@@ -68,6 +99,12 @@ function renderCardLoading(card) {
 }
 
 function renderCardError(card, message) {
+  el('.price', card).textContent = '';
+  const labelEl = el('.overall-label', card);
+  labelEl.textContent = 'Failed to load';
+  labelEl.className = 'overall-label caution';
+  el('.dial-score', card).textContent = '!';
+
   const panel = el('.tf-panel', card);
   panel.innerHTML = `<div class="card-status">${message}</div>`;
   el('.sparkline-wrap', card).style.display = 'none';
@@ -204,7 +241,7 @@ async function renderList(symbols, gridId, emptyId, target) {
 
   const analyses = await Promise.all(
     symbols.map((sym) =>
-      scanSymbol(sym)
+      scheduleScan(() => scanSymbol(sym))
         .then((a) => ({ sym, a }))
         .catch((err) => ({ sym, err }))
     )
@@ -223,10 +260,16 @@ async function renderList(symbols, gridId, emptyId, target) {
 
   analyses.forEach(({ sym, a, err }) => {
     const card = cards.find((c) => c.dataset.symbol === sym);
-    if (err) {
-      renderCardError(card, err.message || 'Could not load data');
-    } else {
-      renderCardResult(card, a);
+    try {
+      if (err) {
+        renderCardError(card, err.message || 'Could not load data');
+      } else {
+        renderCardResult(card, a);
+      }
+    } catch (renderErr) {
+      // A rendering bug for one card should never block the rest of the grid.
+      console.error(`Failed to render ${sym}:`, renderErr);
+      renderCardError(card, 'Something went wrong displaying this stock.');
     }
   });
 }
