@@ -9,26 +9,33 @@ const state = {
 const el = (sel, root = document) => root.querySelector(sel);
 const elAll = (sel, root = document) => root.querySelectorAll(sel);
 
-// Global concurrency limiter: at most N symbols scan at once, app-wide,
-// across both the watchlist and scan list. Yahoo's unofficial API throttles
-// or drops connections when too many requests land at once — this keeps us
-// well under that threshold instead of firing everything in one burst.
-const scanGate = { active: 0, limit: 3, queue: [] };
+// Twelve Data's free tier allows 8 API credits/minute, and each symbol scan
+// uses 2 credits (4H + daily; weekly is derived locally). So at most 4
+// symbols/minute can be dispatched — this paces new scans out at a fixed
+// interval rather than limiting concurrency, since credits are consumed per
+// minute, not per simultaneous connection.
+const DISPATCH_INTERVAL_MS = 16000;
+const scanQueue = [];
+let dispatching = false;
+
 function scheduleScan(task) {
   return new Promise((resolve, reject) => {
-    const run = () => {
-      scanGate.active++;
-      task()
-        .then(resolve, reject)
-        .finally(() => {
-          scanGate.active--;
-          const next = scanGate.queue.shift();
-          if (next) next();
-        });
-    };
-    if (scanGate.active < scanGate.limit) run();
-    else scanGate.queue.push(run);
+    scanQueue.push({ task, resolve, reject });
+    if (!dispatching) {
+      dispatching = true;
+      dispatchNext();
+    }
   });
+}
+
+function dispatchNext() {
+  const job = scanQueue.shift();
+  if (!job) {
+    dispatching = false;
+    return;
+  }
+  job.task().then(job.resolve, job.reject);
+  setTimeout(dispatchNext, DISPATCH_INTERVAL_MS);
 }
 
 async function loadLists() {

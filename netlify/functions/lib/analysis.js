@@ -1,11 +1,10 @@
-const YahooFinance = require('yahoo-finance2').default;
 const { RSI, BollingerBands, SMA } = require('technicalindicators');
 
-const yahooFinance = new YahooFinance({ queue: { concurrency: 2, interval: 400 } });
+const TWELVE_DATA_BASE = 'https://api.twelvedata.com/time_series';
+const API_KEY = process.env.TWELVE_DATA_API_KEY;
 
-// Wraps a promise so a hung/slow Yahoo request can never block the whole
-// function past Netlify's own execution limit — it fails fast with a clear
-// error instead of leaving the client waiting indefinitely.
+// Wraps a promise with a hard timeout so a slow/hung request can never block
+// the whole function past Netlify's own execution limit.
 function withTimeout(promise, ms, label) {
   let timer;
   const timeout = new Promise((_, reject) => {
@@ -14,69 +13,80 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-// ---------- Data fetching ----------
-
-// Yahoo has no native 4h interval, so we pull hourly candles and
-// aggregate every 4 hours ourselves. 180 days comfortably covers 200+
-// four-hour bars for SMA200 while keeping the payload light.
-async function fetchHourlyCandles(symbol, days = 200) {
-  const period2 = new Date();
-  const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const result = await withTimeout(
-    yahooFinance.chart(symbol, { period1, period2, interval: '60m' }),
-    8000,
-    `${symbol} 4H data`
-  );
-  return (result.quotes || []).filter(
-    (q) => q.close != null && q.high != null && q.low != null
-  );
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchDailyCandles(symbol, days = 500) {
-  const period2 = new Date();
-  const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const result = await withTimeout(
-    yahooFinance.chart(symbol, { period1, period2, interval: '1d' }),
-    8000,
-    `${symbol} daily data`
-  );
-  return (result.quotes || []).filter(
-    (q) => q.close != null && q.high != null && q.low != null
-  );
+// ---------- Data fetching (Twelve Data) ----------
+
+async function fetchSeries(symbol, interval, outputsize, label, retried = false) {
+  if (!API_KEY) {
+    throw new Error('Server is missing TWELVE_DATA_API_KEY — add it in Netlify site settings (see README).');
+  }
+
+  const url = `${TWELVE_DATA_BASE}?symbol=${encodeURIComponent(symbol)}&interval=${interval}&outputsize=${outputsize}&apikey=${API_KEY}`;
+  const res = await withTimeout(fetch(url), 8000, `${symbol} ${label}`);
+  const data = await res.json();
+
+  if (data.status === 'error' || data.code >= 400) {
+    // Free tier allows 8 requests/minute — if several symbols are scanned at
+    // once, an occasional rate-limit hit is expected. Retry once after a
+    // short wait rather than failing immediately.
+    const isRateLimit = data.code === 429 || /credit|rate limit/i.test(data.message || '');
+    if (isRateLimit && !retried) {
+      await sleep(9000);
+      return fetchSeries(symbol, interval, outputsize, label, true);
+    }
+    throw new Error(data.message || `Twelve Data error for ${symbol} (${label})`);
+  }
+
+  if (!Array.isArray(data.values)) {
+    throw new Error(`No ${label} data returned for ${symbol} — check the symbol is correct.`);
+  }
+
+  // Twelve Data returns newest-first; we want chronological ascending order.
+  return data.values
+    .map((v) => ({
+      date: new Date(v.datetime),
+      open: parseFloat(v.open),
+      high: parseFloat(v.high),
+      low: parseFloat(v.low),
+      close: parseFloat(v.close),
+      volume: v.volume ? parseFloat(v.volume) : 0,
+    }))
+    .filter((c) => !Number.isNaN(c.close) && !Number.isNaN(c.high) && !Number.isNaN(c.low))
+    .reverse();
 }
 
-async function fetchWeeklyCandles(symbol, days = 1460) {
-  const period2 = new Date();
-  const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
-  const result = await withTimeout(
-    yahooFinance.chart(symbol, { period1, period2, interval: '1wk' }),
-    8000,
-    `${symbol} weekly data`
-  );
-  return (result.quotes || []).filter(
-    (q) => q.close != null && q.high != null && q.low != null
-  );
+// outputsize=300 four-hour bars comfortably covers 200+ bars for SMA200.
+async function fetchFourHourCandles(symbol) {
+  return fetchSeries(symbol, '4h', 300, '4H data');
 }
 
-function aggregateTo4h(hourlyCandles) {
+// outputsize=2500 days (~10 years for established stocks) gives enough
+// history to later derive ~500 weekly bars — plenty for a real SMA200 on
+// the weekly timeframe too.
+async function fetchDailyCandles(symbol) {
+  return fetchSeries(symbol, '1day', 2500, 'daily data');
+}
+
+// Derives weekly candles from daily ones (Monday-start buckets) instead of
+// spending a third API call — free tier credits are precious.
+function aggregateToWeekly(dailyCandles) {
   const buckets = new Map();
-  for (const c of hourlyCandles) {
-    const t = new Date(c.date).getTime();
-    const bucketStart = Math.floor(t / (4 * 60 * 60 * 1000)) * (4 * 60 * 60 * 1000);
-    if (!buckets.has(bucketStart)) {
-      buckets.set(bucketStart, {
-        date: new Date(bucketStart),
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-        volume: c.volume || 0,
-      });
+  for (const c of dailyCandles) {
+    const d = c.date;
+    const day = d.getUTCDay(); // 0=Sun..6=Sat
+    const diffToMonday = (day === 0 ? -6 : 1) - day;
+    const monday = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + diffToMonday));
+    const key = monday.getTime();
+    if (!buckets.has(key)) {
+      buckets.set(key, { date: monday, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume || 0 });
     } else {
-      const b = buckets.get(bucketStart);
+      const b = buckets.get(key);
       b.high = Math.max(b.high, c.high);
       b.low = Math.min(b.low, c.low);
-      b.close = c.close;
+      b.close = c.close; // candles arrive chronologically, so this ends up being the week's last close
       b.volume += c.volume || 0;
     }
   }
@@ -228,16 +238,14 @@ function analyzeTimeframe(candles, fibLookback) {
 }
 
 async function analyzeSymbol(symbol) {
-  // Each fetch has its own bounded timeout (see withTimeout above), so even
-  // in the worst case this resolves in a predictable window rather than
-  // hanging past Netlify's function time limit.
-  const [hourly, daily, weekly] = await Promise.all([
-    fetchHourlyCandles(symbol, 200),
-    fetchDailyCandles(symbol, 500),
-    fetchWeeklyCandles(symbol, 1460),
+  // Only 2 API calls per symbol now — weekly is derived locally from daily
+  // candles rather than spending a third credit on the free tier.
+  const [fourHour, daily] = await Promise.all([
+    fetchFourHourCandles(symbol),
+    fetchDailyCandles(symbol),
   ]);
 
-  const fourHour = aggregateTo4h(hourly);
+  const weekly = aggregateToWeekly(daily);
 
   const tf4h = analyzeTimeframe(fourHour, 60);
   const tf1d = analyzeTimeframe(daily, 90);
