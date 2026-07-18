@@ -256,7 +256,12 @@ function renderCardResult(card, analysis) {
 
   const dailyCandles = analysis.timeframes['1d'] && analysis.timeframes['1d'].candles;
   if (dailyCandles && dailyCandles.length) {
-    drawSparkline(el('.sparkline', card), dailyCandles);
+    if (typeof Chart !== 'undefined') {
+      drawSparkline(el('.sparkline', card), dailyCandles);
+    } else {
+      console.warn('Chart.js failed to load — skipping sparkline, rest of the card still renders.');
+      el('.sparkline-wrap', card).style.display = 'none';
+    }
   }
 }
 
