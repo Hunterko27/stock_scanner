@@ -1,9 +1,15 @@
 const DIAL_CIRCUMFERENCE = 2 * Math.PI * 50;
 
+// How long a scan result stays valid before we're willing to re-fetch it.
+// This matters a lot on Twelve Data's free tier (8 credits/min, 800/day) —
+// without this, adding one stock would silently re-scan every other stock
+// too, burning through the daily budget fast.
+const CACHE_TTL_MS = 90000;
+
 const state = {
   watchlist: [],
   scanlist: [],
-  results: new Map(), // symbol -> analysis
+  results: new Map(), // symbol -> { analysis, fetchedAt }
 };
 
 const el = (sel, root = document) => root.querySelector(sel);
@@ -106,6 +112,8 @@ function renderCardLoading(card) {
 }
 
 function renderCardError(card, message) {
+  card.classList.remove('golden', 'caution');
+  card.classList.add('caution');
   el('.price', card).textContent = '';
   const labelEl = el('.overall-label', card);
   labelEl.textContent = 'Failed to load';
@@ -186,9 +194,13 @@ function renderCardResult(card, analysis) {
   const labCls = labelClass(analysis.overallLabel);
   if (labCls) card.classList.add(labCls);
 
-  el('.price', card).textContent = analysis.timeframes['1d'] && !analysis.timeframes['1d'].insufficientData
-    ? `$${analysis.timeframes['1d'].price}`
-    : '';
+  // Prefer daily price, but fall back to weekly or 4H if daily happens to
+  // have insufficient history (e.g. a recently-listed stock) — otherwise
+  // the card can end up looking "golden but empty."
+  const priceSource = ['1d', '1w', '4h']
+    .map((k) => analysis.timeframes[k])
+    .find((tf) => tf && !tf.insufficientData);
+  el('.price', card).textContent = priceSource ? `$${priceSource.price}` : '';
 
   const labelEl = el('.overall-label', card);
   labelEl.textContent = analysis.overallLabel;
@@ -231,7 +243,7 @@ function renderCardResult(card, analysis) {
   }
 }
 
-async function renderList(symbols, gridId, emptyId, target) {
+async function renderList(symbols, gridId, emptyId, target, forceRefresh = false) {
   const grid = el(`#${gridId}`);
   const emptyNote = el(`#${emptyId}`);
   grid.innerHTML = '';
@@ -240,18 +252,28 @@ async function renderList(symbols, gridId, emptyId, target) {
 
   const cards = symbols.map((sym) => {
     const card = renderCardShell(sym);
-    renderCardLoading(card);
+    const cached = !forceRefresh && state.results.get(sym);
+    const isFresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
+    if (!isFresh) renderCardLoading(card);
     el('.remove-btn', card).addEventListener('click', () => removeSymbol(sym, target));
     grid.appendChild(card);
     return card;
   });
 
   const analyses = await Promise.all(
-    symbols.map((sym) =>
-      scheduleScan(() => scanSymbol(sym))
-        .then((a) => ({ sym, a }))
-        .catch((err) => ({ sym, err }))
-    )
+    symbols.map((sym) => {
+      const cached = !forceRefresh && state.results.get(sym);
+      const isFresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
+      if (isFresh) {
+        return Promise.resolve({ sym, a: cached.analysis });
+      }
+      return scheduleScan(() => scanSymbol(sym))
+        .then((a) => {
+          state.results.set(sym, { analysis: a, fetchedAt: Date.now() });
+          return { sym, a };
+        })
+        .catch((err) => ({ sym, err }));
+    })
   );
 
   // Sort scan list by overall score descending so best opportunities float up
@@ -281,10 +303,10 @@ async function renderList(symbols, gridId, emptyId, target) {
   });
 }
 
-async function renderAll() {
+async function renderAll(forceRefresh = false) {
   await Promise.all([
-    renderList(state.watchlist, 'watchlist-grid', 'watchlist-empty', 'watchlist'),
-    renderList(state.scanlist, 'scanlist-grid', 'scanlist-empty', 'scanlist'),
+    renderList(state.watchlist, 'watchlist-grid', 'watchlist-empty', 'watchlist', forceRefresh),
+    renderList(state.scanlist, 'scanlist-grid', 'scanlist-empty', 'scanlist', forceRefresh),
   ]);
 }
 
@@ -332,7 +354,7 @@ function wireForm() {
     input.value = '';
   });
 
-  el('#refresh-all').addEventListener('click', () => renderAll());
+  el('#refresh-all').addEventListener('click', () => renderAll(true));
 }
 
 (async function init() {
