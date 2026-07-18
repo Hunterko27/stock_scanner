@@ -13,13 +13,9 @@ function withTimeout(promise, ms, label) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 // ---------- Data fetching (Twelve Data) ----------
 
-async function fetchSeries(symbol, interval, outputsize, label, retried = false) {
+async function fetchSeries(symbol, interval, outputsize, label) {
   if (!API_KEY) {
     throw new Error('Server is missing TWELVE_DATA_API_KEY — add it in Netlify site settings (see README).');
   }
@@ -29,13 +25,17 @@ async function fetchSeries(symbol, interval, outputsize, label, retried = false)
   const data = await res.json();
 
   if (data.status === 'error' || data.code >= 400) {
-    // Free tier allows 8 requests/minute — if several symbols are scanned at
-    // once, an occasional rate-limit hit is expected. Retry once after a
-    // short wait rather than failing immediately.
+    // Free tier allows 8 requests/minute. Retrying with an in-function sleep
+    // is a trap here — Netlify's synchronous functions have their own ~10s
+    // execution limit, and a multi-second sleep-then-retry can blow past
+    // that and get the whole function killed before it can even respond.
+    // Instead, fail fast with a distinct error the client can recognize and
+    // retry later, outside the function's time budget entirely.
     const isRateLimit = data.code === 429 || /credit|rate limit/i.test(data.message || '');
-    if (isRateLimit && !retried) {
-      await sleep(9000);
-      return fetchSeries(symbol, interval, outputsize, label, true);
+    if (isRateLimit) {
+      const err = new Error(`Rate limited fetching ${label} for ${symbol} — try again in a moment.`);
+      err.isRateLimit = true;
+      throw err;
     }
     throw new Error(data.message || `Twelve Data error for ${symbol} (${label})`);
   }

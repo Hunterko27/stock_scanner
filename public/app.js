@@ -67,14 +67,16 @@ async function saveLists() {
   }
 }
 
-async function scanSymbol(symbol) {
+async function scanSymbolOnce(symbol) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
     const res = await fetch(`/api/scan?symbol=${encodeURIComponent(symbol)}`, { signal: controller.signal });
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to scan ${symbol}`);
+      const body = await res.json().catch(() => ({}));
+      const err = new Error(body.error || `Failed to scan ${symbol}`);
+      err.isRateLimit = !!body.isRateLimit;
+      throw err;
     }
     return await res.json();
   } catch (err) {
@@ -82,6 +84,21 @@ async function scanSymbol(symbol) {
     throw err;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// A rate-limit hit is expected occasionally on the free tier, especially
+// right after several other stocks were just scanned. Retrying is safe to
+// do here (the browser has no hard execution-time limit, unlike the
+// serverless function), so wait for Twelve Data's per-minute window to
+// clearly roll over, then try once more before giving up.
+async function scanSymbol(symbol) {
+  try {
+    return await scanSymbolOnce(symbol);
+  } catch (err) {
+    if (!err.isRateLimit) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 15000));
+    return scanSymbolOnce(symbol);
   }
 }
 

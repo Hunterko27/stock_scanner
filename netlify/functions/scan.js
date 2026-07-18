@@ -19,10 +19,15 @@ exports.handler = async (event) => {
       body: JSON.stringify(analysis),
     };
   } catch (err) {
+    const statusCode = err.isRateLimit ? 429 : 502;
     return {
-      statusCode: 502,
+      statusCode,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ error: `Could not fetch data for ${symbol}`, detail: String(err.message || err) }),
+      body: JSON.stringify({
+        error: err.isRateLimit ? err.message : `Could not fetch data for ${symbol}`,
+        detail: String(err.message || err),
+        isRateLimit: !!err.isRateLimit,
+      }),
     };
   }
 };
