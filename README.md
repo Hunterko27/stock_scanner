@@ -31,6 +31,19 @@ relative to a handful of well-known technical signals, nothing more.
     overall score, shown as the gold dial on each card.
 - **Storage**: your watchlist and scan list are saved server-side via Netlify Blobs, so
   they persist across devices as long as you're using the same deployed site.
+- **Plain-English guidance**: each card includes a couple of auto-generated sentences
+  translating the numbers into something actionable — e.g. "price is 7% below the
+  golden zone, watch for a rally into that range" — plus a concrete invalidation level
+  (the swing low that, if broken, means the setup no longer holds).
+- **Earnings check (opt-in, manual only)**: a "Check earnings date" button on each card
+  looks up the next earnings date via Twelve Data's `/earnings` endpoint. This is
+  **never called automatically** — only on click — because this endpoint's exact
+  credit cost couldn't be confirmed ahead of time, and fundamentals-style endpoints on
+  Twelve Data can cost far more than the 1 credit/call used for price data (their docs
+  show some fundamentals endpoints at 100 credits/symbol). Results are cached 24 hours
+  per symbol to avoid paying for the same check twice. **The first time you use this,
+  check your Twelve Data usage dashboard afterward** to see what it actually cost
+  before relying on it for many stocks.
 - **Pacing**: to stay under the free tier's 8 requests/minute cap, the app dispatches
   one new stock scan roughly every 16 seconds rather than firing them all at once.
   Cards fill in gradually — this is expected, not a bug.

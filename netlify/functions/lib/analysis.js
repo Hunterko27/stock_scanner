@@ -237,6 +237,51 @@ function analyzeTimeframe(candles, fibLookback) {
   };
 }
 
+// ---------- Plain-English guidance ----------
+
+function fmt(n) {
+  return n != null ? `$${Number(n).toFixed(2)}` : null;
+}
+
+function buildGuidance(tf1d, tf1w, overallScore) {
+  if (!tf1d || tf1d.insufficientData) {
+    return 'Not enough daily history yet to generate guidance for this stock.';
+  }
+
+  const { rsi, price, fib, sma20, bollinger } = tf1d;
+  const weeklyTrendNote = tf1w && !tf1w.insufficientData && tf1w.sma20 != null && tf1w.sma50 != null
+    ? ` On the weekly timeframe, the broader trend is ${tf1w.sma20 > tf1w.sma50 ? 'bullish' : 'bearish'} (20 ${tf1w.sma20 > tf1w.sma50 ? '>' : '<'} 50 MA).`
+    : '';
+
+  // Invalidation level: the swing low underpinning the current setup. If
+  // price closes below it, the structure the setup relies on has broken.
+  const invalidation = fib ? fmt(fib.swingLow) : null;
+  const invalidationNote = invalidation
+    ? ` A close below ${invalidation} would invalidate this setup.`
+    : '';
+
+  if (fib && fib.inZone) {
+    return `Price is trading inside the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}) right now, with RSI at ${rsi ?? '—'}. Watch for a bounce with real confirmation — a reversal candle or a pickup in volume — before treating this as a green light.${invalidationNote}${weeklyTrendNote}`;
+  }
+
+  if (fib && fib.approaching) {
+    if (fib.direction === 'uptrend_pullback') {
+      return `Price is currently ${fib.distancePct}% above the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}). If it pulls back into that range and RSI cools from its current ${rsi ?? '—'}, that would strengthen a potential buy case — don't chase it up here.${invalidationNote}${weeklyTrendNote}`;
+    }
+    return `Price is currently ${fib.distancePct}% below the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}). Watch for a rally into that range — a stall or reversal there is the more typical bounce pattern, not a straight break higher.${invalidationNote}${weeklyTrendNote}`;
+  }
+
+  if (rsi != null && rsi >= 70) {
+    return `RSI is overbought at ${rsi} and price is stretched versus its recent range${bollinger ? ` (above ${fmt(bollinger.upper)})` : ''}. This isn't an attractive entry as-is — waiting for a pullback toward ${fmt(sma20)} or the golden zone would offer better risk/reward.${weeklyTrendNote}`;
+  }
+
+  if (overallScore != null && overallScore <= 40) {
+    return `Momentum is weak with no clear reversal signal yet.${invalidationNote ? ' Wait for either RSI to turn up from an oversold level, or a confirmed bounce, before considering an entry.' : ' Wait for a clearer signal before considering an entry.'}${weeklyTrendNote}`;
+  }
+
+  return `No strong setup right now — RSI is neutral at ${rsi ?? '—'}.${fib ? ` Worth checking back if price approaches the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}).` : ''}${weeklyTrendNote}`;
+}
+
 async function analyzeSymbol(symbol) {
   // Only 2 API calls per symbol now — weekly is derived locally from daily
   // candles rather than spending a third credit on the free tier.
@@ -275,6 +320,7 @@ async function analyzeSymbol(symbol) {
     updatedAt: new Date().toISOString(),
     overallScore,
     overallLabel,
+    guidance: buildGuidance(tf1d, tf1w, overallScore),
     timeframes: { '4h': tf4h, '1d': tf1d, '1w': tf1w },
   };
 }

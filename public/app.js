@@ -132,6 +132,7 @@ function renderCardError(card, message) {
   card.classList.remove('golden', 'caution');
   card.classList.add('caution');
   el('.price', card).textContent = '';
+  el('.guidance-box', card).textContent = '';
   const labelEl = el('.overall-label', card);
   labelEl.textContent = 'Failed to load';
   labelEl.className = 'overall-label caution';
@@ -141,6 +142,7 @@ function renderCardError(card, message) {
   panel.innerHTML = `<div class="card-status">${message}</div>`;
   el('.sparkline-wrap', card).style.display = 'none';
   el('.tf-tabs', card).style.display = 'none';
+  el('.earnings-row', card).style.display = 'none';
 }
 
 function renderSignalChips(container, signals) {
@@ -211,6 +213,8 @@ function renderCardResult(card, analysis) {
   const labCls = labelClass(analysis.overallLabel);
   if (labCls) card.classList.add(labCls);
 
+  el('.guidance-box', card).textContent = analysis.guidance || '';
+
   // Prefer daily price, but fall back to weekly or 4H if daily happens to
   // have insufficient history (e.g. a recently-listed stock) — otherwise
   // the card can end up looking "golden but empty."
@@ -263,6 +267,37 @@ function renderCardResult(card, analysis) {
       el('.sparkline-wrap', card).style.display = 'none';
     }
   }
+
+  const earningsBtn = el('.earnings-btn', card);
+  const earningsResult = el('.earnings-result', card);
+  earningsBtn.addEventListener('click', async () => {
+    earningsBtn.disabled = true;
+    earningsBtn.textContent = 'Checking…';
+    earningsResult.textContent = '';
+    earningsResult.className = 'earnings-result';
+    try {
+      const res = await fetch(`/api/earnings?symbol=${encodeURIComponent(analysis.symbol)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        earningsResult.textContent = data.error || 'Could not check earnings.';
+        earningsResult.className = 'earnings-result warn';
+      } else if (data.nextEarningsDate == null) {
+        earningsResult.textContent = 'No earnings date found.';
+      } else if (data.isPast) {
+        earningsResult.textContent = `Most recent earnings: ${data.nextEarningsDate} (no upcoming date listed yet).`;
+      } else {
+        const soon = data.daysUntil <= 7;
+        earningsResult.textContent = `Next earnings: ${data.nextEarningsDate} (${data.daysUntil} day${data.daysUntil === 1 ? '' : 's'} away)${soon ? ' — expect volatility around this date' : ''}.`;
+        if (soon) earningsResult.className = 'earnings-result warn';
+      }
+    } catch (err) {
+      earningsResult.textContent = 'Could not check earnings — try again shortly.';
+      earningsResult.className = 'earnings-result warn';
+    } finally {
+      earningsBtn.disabled = false;
+      earningsBtn.textContent = 'Check earnings date';
+    }
+  });
 }
 
 async function renderList(symbols, gridId, emptyId, target, forceRefresh = false) {

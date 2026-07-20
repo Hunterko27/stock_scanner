@@ -229,6 +229,49 @@ main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 60px; }
 .overall-label.golden { color: var(--gold-bright); font-weight: 600; }
 .overall-label.caution { color: var(--brick); font-weight: 600; }
 
+.guidance-box {
+  background: var(--surface-2);
+  border-left: 3px solid var(--gold);
+  border-radius: 0 8px 8px 0;
+  padding: 10px 12px;
+  margin: 12px 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.earnings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.earnings-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.earnings-btn:hover { border-color: var(--gold); color: var(--text); }
+.earnings-btn:disabled { opacity: 0.5; cursor: default; }
+
+.earnings-note {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+.earnings-result {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+.earnings-result.warn { color: var(--brick); font-weight: 600; }
+
 .sparkline-wrap { height: 54px; margin: 12px 0 8px; }
 
 .tf-tabs {

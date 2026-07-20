@@ -16,6 +16,11 @@
   to = "/.netlify/functions/lists"
   status = 200
 
+[[redirects]]
+  from = "/api/earnings"
+  to = "/.netlify/functions/earnings"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]
