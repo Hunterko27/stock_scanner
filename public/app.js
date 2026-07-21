@@ -3,24 +3,28 @@ const DIAL_CIRCUMFERENCE = 2 * Math.PI * 50;
 // How long a scan result stays valid before we're willing to re-fetch it.
 // This matters a lot on Twelve Data's free tier (8 credits/min, 800/day) —
 // without this, adding one stock would silently re-scan every other stock
-// too, burning through the daily budget fast.
-const CACHE_TTL_MS = 90000;
+// too, burning through the daily budget fast. 5 minutes rather than 90s,
+// since a full load can itself take a minute or more.
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const state = {
   watchlist: [],
   scanlist: [],
   results: new Map(), // symbol -> { analysis, fetchedAt }
+  cardsByGrid: { watchlist: new Map(), scanlist: new Map() }, // symbol -> persisted card element
 };
 
 const el = (sel, root = document) => root.querySelector(sel);
 const elAll = (sel, root = document) => root.querySelectorAll(sel);
 
 // Twelve Data's free tier allows 8 API credits/minute, and each symbol scan
-// uses 2 credits (4H + daily; weekly is derived locally). So at most 4
-// symbols/minute can be dispatched — this paces new scans out at a fixed
-// interval rather than limiting concurrency, since credits are consumed per
-// minute, not per simultaneous connection.
-const DISPATCH_INTERVAL_MS = 16000;
+// uses 2 credits (4H + daily; weekly is derived locally) — so up to 4
+// symbols can safely be dispatched at once. Rather than trickling scans out
+// one at a time, fire a full batch immediately, then wait out the rest of
+// the per-minute window before the next batch. For most watchlists (≤4
+// stocks) this means everything loads almost immediately.
+const BATCH_SIZE = 4;
+const BATCH_WAIT_MS = 62000; // a little over a minute, safely past any window boundary
 const scanQueue = [];
 let dispatching = false;
 
@@ -29,19 +33,26 @@ function scheduleScan(task) {
     scanQueue.push({ task, resolve, reject });
     if (!dispatching) {
       dispatching = true;
-      dispatchNext();
+      // Deferred rather than called immediately: renderAll() schedules every
+      // symbol's scan synchronously in the same tick, so without this defer,
+      // the first batch would fire after only one item has been queued.
+      setTimeout(dispatchBatch, 0);
     }
   });
 }
 
-function dispatchNext() {
-  const job = scanQueue.shift();
-  if (!job) {
+function dispatchBatch() {
+  if (!scanQueue.length) {
     dispatching = false;
     return;
   }
-  job.task().then(job.resolve, job.reject);
-  setTimeout(dispatchNext, DISPATCH_INTERVAL_MS);
+  const batch = scanQueue.splice(0, BATCH_SIZE);
+  batch.forEach((job) => job.task().then(job.resolve, job.reject));
+  if (scanQueue.length) {
+    setTimeout(dispatchBatch, BATCH_WAIT_MS);
+  } else {
+    dispatching = false;
+  }
 }
 
 async function loadLists() {
@@ -114,13 +125,24 @@ function labelClass(label) {
   return '';
 }
 
-function renderCardShell(symbol) {
+function createCard(symbol) {
+  const card = document.createElement('article');
+  card.className = 'stock-card';
+  card.dataset.symbol = symbol;
+  return card;
+}
+
+// Wipes and rebuilds a card's inner content from the template. Always call
+// this immediately before a genuine render (never for a cache-hit reuse) —
+// it discards any previously-attached listeners along with the old nodes,
+// so re-populating a persisted card never results in duplicate handlers.
+function populateCardChildren(card, symbol) {
   const tpl = el('#card-template');
   const node = tpl.content.cloneNode(true);
-  const card = node.querySelector('.stock-card');
-  card.dataset.symbol = symbol;
+  const fresh = node.querySelector('.stock-card');
+  card.innerHTML = '';
+  Array.from(fresh.children).forEach((child) => card.appendChild(child));
   el('.ticker', card).textContent = symbol;
-  return card;
 }
 
 function renderCardLoading(card) {
@@ -303,49 +325,68 @@ function renderCardResult(card, analysis) {
 async function renderList(symbols, gridId, emptyId, target, forceRefresh = false) {
   const grid = el(`#${gridId}`);
   const emptyNote = el(`#${emptyId}`);
-  grid.innerHTML = '';
   emptyNote.hidden = symbols.length > 0;
-  if (!symbols.length) return;
 
-  const cards = symbols.map((sym) => {
-    const card = renderCardShell(sym);
-    const cached = !forceRefresh && state.results.get(sym);
-    const isFresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
-    if (!isFresh) renderCardLoading(card);
-    el('.remove-btn', card).addEventListener('click', () => removeSymbol(sym, target));
-    grid.appendChild(card);
-    return card;
+  const existingCards = state.cardsByGrid[target];
+  const symbolSet = new Set(symbols);
+
+  // Remove cards for symbols no longer in the list
+  for (const [sym, cardEl] of existingCards) {
+    if (!symbolSet.has(sym)) {
+      cardEl.remove();
+      existingCards.delete(sym);
+    }
+  }
+
+  // Ensure every symbol has a card, creating (and appending) any that are new.
+  // Content is populated below, in the fetch step — every brand-new card is
+  // by definition not cache-fresh, so it'll always go through that path.
+  symbols.forEach((sym) => {
+    if (!existingCards.has(sym)) {
+      const card = createCard(sym);
+      existingCards.set(sym, card);
+      grid.appendChild(card);
+    }
   });
+
+  if (!symbols.length) return;
 
   const analyses = await Promise.all(
     symbols.map((sym) => {
       const cached = !forceRefresh && state.results.get(sym);
       const isFresh = cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS;
       if (isFresh) {
-        return Promise.resolve({ sym, a: cached.analysis });
+        // Already displayed correctly from a previous render — skip entirely,
+        // no network call, no DOM changes, no flicker.
+        return Promise.resolve({ sym, a: cached.analysis, skipRender: true });
       }
+      const card = existingCards.get(sym);
+      // Rebuild this card's inner content fresh before showing "Loading…" —
+      // guards against duplicate listeners if this card already existed
+      // and is now being genuinely re-fetched (e.g. cache expired).
+      populateCardChildren(card, sym);
+      el('.remove-btn', card).addEventListener('click', () => removeSymbol(sym, target));
+      renderCardLoading(card);
       return scheduleScan(() => scanSymbol(sym))
         .then((a) => {
           state.results.set(sym, { analysis: a, fetchedAt: Date.now() });
-          return { sym, a };
+          return { sym, a, skipRender: false };
         })
-        .catch((err) => ({ sym, err }));
+        .catch((err) => ({ sym, err, skipRender: false }));
     })
   );
 
-  // Sort scan list by overall score descending so best opportunities float up
+  // Sort scan list by overall score descending so best opportunities float
+  // up — reorders the existing DOM nodes rather than rebuilding the grid.
   if (target === 'scanlist') {
     const scoreMap = new Map(analyses.map((r) => [r.sym, r.a ? r.a.overallScore ?? -1 : -1]));
     const ordered = [...symbols].sort((a, b) => (scoreMap.get(b) ?? -1) - (scoreMap.get(a) ?? -1));
-    grid.innerHTML = '';
-    ordered.forEach((sym) => {
-      const found = cards.find((c) => c.dataset.symbol === sym);
-      grid.appendChild(found);
-    });
+    ordered.forEach((sym) => grid.appendChild(existingCards.get(sym)));
   }
 
-  analyses.forEach(({ sym, a, err }) => {
-    const card = cards.find((c) => c.dataset.symbol === sym);
+  analyses.forEach(({ sym, a, err, skipRender }) => {
+    if (skipRender) return;
+    const card = existingCards.get(sym);
     try {
       if (err) {
         renderCardError(card, err.message || 'Could not load data');

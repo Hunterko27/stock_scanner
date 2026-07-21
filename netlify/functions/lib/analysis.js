@@ -261,14 +261,15 @@ function buildGuidance(tf1d, tf1w, overallScore) {
     : '';
 
   if (fib && fib.inZone) {
-    return `Price is trading inside the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}) right now, with RSI at ${rsi ?? '—'}. Watch for a bounce with real confirmation — a reversal candle or a pickup in volume — before treating this as a green light.${invalidationNote}${weeklyTrendNote}`;
+    const zoneType = fib.direction === 'uptrend_pullback' ? 'pullback support' : 'bounce';
+    return `Price is trading inside the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}) right now — a ${zoneType} area, with RSI at ${rsi ?? '—'}. Zones like this don't always hold; watch for real confirmation (a reversal candle, a pickup in volume) rather than treating the zone itself as a green light.${invalidationNote}${weeklyTrendNote}`;
   }
 
   if (fib && fib.approaching) {
     if (fib.direction === 'uptrend_pullback') {
-      return `Price is currently ${fib.distancePct}% above the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}). If it pulls back into that range and RSI cools from its current ${rsi ?? '—'}, that would strengthen a potential buy case — don't chase it up here.${invalidationNote}${weeklyTrendNote}`;
+      return `Price is currently ${fib.distancePct}% above the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}) — don't chase it up here. But don't assume a clean pullback into that zone is likely either: price often gets rejected well before reaching this deep, or breaks straight through it if the uptrend is actually rolling over rather than just pausing. Treat this level as somewhere to watch for a real reaction — a reversal candle, support holding on volume — not a target to buy on arrival.${invalidationNote}${weeklyTrendNote}`;
     }
-    return `Price is currently ${fib.distancePct}% below the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}). Watch for a rally into that range — a stall or reversal there is the more typical bounce pattern, not a straight break higher.${invalidationNote}${weeklyTrendNote}`;
+    return `Price is currently ${fib.distancePct}% below the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}). Bounces off support around here tend to be somewhat more reliable than uptrend pullbacks reaching this deep, but it's still not guaranteed — watch for confirmation (a stall or reversal candle) rather than assuming an automatic bounce.${invalidationNote}${weeklyTrendNote}`;
   }
 
   if (rsi != null && rsi >= 70) {
