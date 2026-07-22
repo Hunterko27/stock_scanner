@@ -186,6 +186,15 @@ function renderSignalChips(container, signals) {
   }
 }
 
+function formatExtensions(fib) {
+  const dir = fib.direction === 'uptrend_pullback' ? '↑' : '↓';
+  const nearer = ['1.272', '1.618'];
+  return nearer
+    .filter((r) => fib.extensions[r] != null)
+    .map((r) => `${dir}$${fib.extensions[r].toFixed(2)} (${r})`)
+    .join(', ');
+}
+
 function renderTimeframePanel(panelEl, tf) {
   if (!tf || tf.insufficientData) {
     panelEl.innerHTML = '<div class="card-status">Not enough history yet for this timeframe.</div>';
@@ -196,7 +205,8 @@ function renderTimeframePanel(panelEl, tf) {
     <div class="metric-row"><span>RSI (14)</span><span>${tf.rsi ?? '—'}</span></div>
     <div class="metric-row"><span>Bollinger</span><span>${tf.bollinger ? `${tf.bollinger.lower} – ${tf.bollinger.upper}` : '—'}</span></div>
     <div class="metric-row"><span>SMA20 / SMA50 / SMA200</span><span>${tf.sma20 ?? '—'} / ${tf.sma50 ?? '—'} / ${tf.sma200 ?? '—'}</span></div>
-    <div class="metric-row"><span>Fib golden zone</span><span>${tf.fib ? `${tf.fib.goldenLow.toFixed(2)} – ${tf.fib.goldenHigh.toFixed(2)}` : '—'}</span></div>
+    <div class="metric-row"><span>Fib golden zone${tf.fib && tf.fib.useLog ? ' (log)' : ''}</span><span>${tf.fib ? `$${tf.fib.goldenLow.toFixed(2)} – $${tf.fib.goldenHigh.toFixed(2)}` : '—'}</span></div>
+    <div class="metric-row"><span>Extension targets</span><span>${tf.fib && tf.fib.extensions ? formatExtensions(tf.fib) : '—'}</span></div>
     <div class="signal-chips"></div>
   `;
   renderSignalChips(el('.signal-chips', panelEl), tf.signals);

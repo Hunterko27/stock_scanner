@@ -25,8 +25,20 @@ relative to a handful of well-known technical signals, nothing more.
   - Bollinger Bands(20, 2σ) — price position within the bands
   - SMA20 vs SMA50 — trend context, and healthy pullbacks toward the average
   - SMA200 — long-term trend context (only shown once there's enough history)
-  - Fibonacci retracement — is price sitting in the 61.8%–65% "golden pocket" of the
-    most recent swing?
+  - Fibonacci retracement — is price sitting in the 61.8%\u201378.6% "golden zone" of
+    the most recent swing? (Widened from the narrower 61.8\u201365% "pocket" some
+    traders use — 78.6% is the level most technical analysts treat as the practical
+    limit of a valid pullback; beyond it, the trend is generally considered
+    structurally broken rather than just pausing.) Daily and weekly retracements are
+    calculated on a **log scale** rather than linear — this matters most for stocks
+    that have moved a large percentage (e.g. $8 to $80), where straight dollar-based
+    retracement can land noticeably differently from where price has actually reacted
+    historically. 4H uses linear scale, since shorter-term moves are rarely large
+    enough for the difference to matter. Each card also shows **extension targets**
+    (127.2%, 161.8%, 227.2%, 261.8%) — a separate calculation projecting where price
+    might head if the move continues *past* the swing, rather than where a pullback
+    might stall. Extensions are always linear, even when retracements use log scale,
+    since log-scale extensions compound into unrealistic numbers at higher ratios.
   - The three timeframes are then blended (Weekly 40% / Daily 35% / 4H 25%) into one
     overall score, shown as the gold dial on each card.
 - **Storage**: your watchlist and scan list are saved server-side via Netlify Blobs, so

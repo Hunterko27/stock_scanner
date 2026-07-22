@@ -95,7 +95,21 @@ function aggregateToWeekly(dailyCandles) {
 
 // ---------- Indicator + scoring logic ----------
 
-function computeFibZone(candles, lookback) {
+// A retracement level a fraction `r` of the way back from `from` toward `to`.
+// Linear: straight subtraction. Log: interpolates in log-space then converts
+// back — this matters most on large-percentage moves (e.g. a stock that went
+// from $8 to $80), where a straight dollar-based retracement can land
+// noticeably differently than where price has actually reacted historically.
+function retraceLevel(from, to, ratio, useLog) {
+  if (useLog && from > 0 && to > 0) {
+    const logFrom = Math.log(from);
+    const logTo = Math.log(to);
+    return Math.exp(logFrom + (logTo - logFrom) * ratio);
+  }
+  return from + (to - from) * ratio;
+}
+
+function computeFibZone(candles, lookback, useLog = false) {
   const window = candles.slice(-lookback);
   if (window.length < 10) return null;
 
@@ -109,19 +123,18 @@ function computeFibZone(candles, lookback) {
   if (range <= 0) return null;
 
   const uptrend = llIdx < hhIdx; // low happened first -> swing is low-to-high
-  let goldenLow, goldenHigh, direction;
+  const from = uptrend ? hh : ll; // retracement always measured back from the swing's endpoint
+  const to = uptrend ? ll : hh;
 
-  if (uptrend) {
-    // Retracement measured down from the high; golden pocket 0.618-0.65 of the move
-    goldenLow = hh - range * 0.65;
-    goldenHigh = hh - range * 0.618;
-    direction = 'uptrend_pullback';
-  } else {
-    // Swing is high-to-low; golden pocket is the bounce zone off the low
-    goldenLow = ll + range * 0.618;
-    goldenHigh = ll + range * 0.65;
-    direction = 'downtrend_bounce';
-  }
+  // Golden zone widened to 0.618-0.786 — 0.786 is the level most technical
+  // analysts treat as the practical limit of a valid pullback; beyond it,
+  // the original trend is generally considered structurally broken rather
+  // than just paused.
+  const level618 = retraceLevel(from, to, 0.618, useLog);
+  const level786 = retraceLevel(from, to, 0.786, useLog);
+  const goldenLow = Math.min(level618, level786);
+  const goldenHigh = Math.max(level618, level786);
+  const direction = uptrend ? 'uptrend_pullback' : 'downtrend_bounce';
 
   const price = candles[candles.length - 1].close;
   const inZone = price >= goldenLow && price <= goldenHigh;
@@ -133,25 +146,50 @@ function computeFibZone(candles, lookback) {
     swingHigh: hh,
     swingLow: ll,
     direction,
+    useLog,
     goldenLow,
     goldenHigh,
     inZone,
     approaching: !inZone && distancePct <= 3,
     distancePct: Number(distancePct.toFixed(2)),
     levels: {
-      '0.0': uptrend ? hh : ll,
-      '0.236': uptrend ? hh - range * 0.236 : ll + range * 0.236,
-      '0.382': uptrend ? hh - range * 0.382 : ll + range * 0.382,
-      '0.5': uptrend ? hh - range * 0.5 : ll + range * 0.5,
-      '0.618': uptrend ? hh - range * 0.618 : ll + range * 0.618,
-      '0.65': uptrend ? hh - range * 0.65 : ll + range * 0.65,
-      '0.786': uptrend ? hh - range * 0.786 : ll + range * 0.786,
-      '1.0': uptrend ? ll : hh,
+      '0.0': from,
+      '0.236': retraceLevel(from, to, 0.236, useLog),
+      '0.382': retraceLevel(from, to, 0.382, useLog),
+      '0.5': retraceLevel(from, to, 0.5, useLog),
+      '0.618': level618,
+      '0.786': level786,
+      '1.0': to,
     },
+    // Extensions always use linear scale, even when retracements use log —
+    // traders conventionally read extensions as simple multiples of the
+    // price range, and log-scale extensions compound into unrealistic
+    // numbers at higher ratios (e.g. 2.618x on a 10x mover can project a
+    // target many multiples above any plausible near-term price).
+    extensions: computeFibExtensions(hh, ll, direction, false),
   };
 }
 
-function analyzeTimeframe(candles, fibLookback) {
+// Extensions project continuation targets beyond the swing — where price
+// might go if the original trend resumes, rather than where a pullback
+// might stall. A separate calculation from retracement, using ratios that
+// extend past the 0-1 range of the swing itself.
+function computeFibExtensions(hh, ll, direction, useLog) {
+  const ratios = [1.272, 1.618, 2.272, 2.618];
+  const levels = {};
+  ratios.forEach((r) => {
+    if (direction === 'uptrend_pullback') {
+      // Projects upside targets above the prior high
+      levels[r] = retraceLevel(ll, hh, r, useLog);
+    } else {
+      // Projects downside targets below the prior low
+      levels[r] = retraceLevel(hh, ll, r, useLog);
+    }
+  });
+  return levels;
+}
+
+function analyzeTimeframe(candles, fibLookback, useLog = false) {
   const closes = candles.map((c) => c.close);
   if (closes.length < 30) {
     return { insufficientData: true };
@@ -170,7 +208,7 @@ function analyzeTimeframe(candles, fibLookback) {
   const sma20 = sma20Values[sma20Values.length - 1];
   const sma50 = sma50Values[sma50Values.length - 1];
   const sma200 = sma200Values.length ? sma200Values[sma200Values.length - 1] : null;
-  const fib = computeFibZone(candles, fibLookback);
+  const fib = computeFibZone(candles, fibLookback, useLog);
 
   // ---- Component scoring (each contributes to a 0-100 opportunity score) ----
   let score = 50; // neutral baseline
@@ -260,27 +298,34 @@ function buildGuidance(tf1d, tf1w, overallScore) {
     ? ` A close below ${invalidation} would invalidate this setup.`
     : '';
 
+  // Extension targets answer the other half of "where might this go" —
+  // retracement/golden-zone tells you where a pullback might stall;
+  // extensions project where price might head if the move continues past
+  // the swing instead, in the opposite direction from the invalidation level.
+  const extensionNote = fib && fib.extensions && fib.extensions['1.272'] != null && fib.extensions['1.618'] != null
+    ? ` If the move continues past the recent ${fib.direction === 'uptrend_pullback' ? 'high' : 'low'} instead, reference targets sit near ${fmt(fib.extensions['1.272'])} and ${fmt(fib.extensions['1.618'])}.`
+    : '';
+
+  let core;
+
   if (fib && fib.inZone) {
     const zoneType = fib.direction === 'uptrend_pullback' ? 'pullback support' : 'bounce';
-    return `Price is trading inside the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}) right now — a ${zoneType} area, with RSI at ${rsi ?? '—'}. Zones like this don't always hold; watch for real confirmation (a reversal candle, a pickup in volume) rather than treating the zone itself as a green light.${invalidationNote}${weeklyTrendNote}`;
-  }
-
-  if (fib && fib.approaching) {
+    core = `Price is trading inside the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}) right now — a ${zoneType} area, with RSI at ${rsi ?? '—'}. Zones like this don't always hold; watch for real confirmation (a reversal candle, a pickup in volume) rather than treating the zone itself as a green light.`;
+  } else if (fib && fib.approaching) {
     if (fib.direction === 'uptrend_pullback') {
-      return `Price is currently ${fib.distancePct}% above the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}) — don't chase it up here. But don't assume a clean pullback into that zone is likely either: price often gets rejected well before reaching this deep, or breaks straight through it if the uptrend is actually rolling over rather than just pausing. Treat this level as somewhere to watch for a real reaction — a reversal candle, support holding on volume — not a target to buy on arrival.${invalidationNote}${weeklyTrendNote}`;
+      core = `Price is currently ${fib.distancePct}% above the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}) — don't chase it up here. But don't assume a clean pullback into that zone is likely either: price often gets rejected well before reaching this deep, or breaks straight through it if the uptrend is actually rolling over rather than just pausing. Treat this level as somewhere to watch for a real reaction — a reversal candle, support holding on volume — not a target to buy on arrival.`;
+    } else {
+      core = `Price is currently ${fib.distancePct}% below the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}). Bounces off support around here tend to be somewhat more reliable than uptrend pullbacks reaching this deep, but it's still not guaranteed — watch for confirmation (a stall or reversal candle) rather than assuming an automatic bounce.`;
     }
-    return `Price is currently ${fib.distancePct}% below the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}). Bounces off support around here tend to be somewhat more reliable than uptrend pullbacks reaching this deep, but it's still not guaranteed — watch for confirmation (a stall or reversal candle) rather than assuming an automatic bounce.${invalidationNote}${weeklyTrendNote}`;
+  } else if (rsi != null && rsi >= 70) {
+    core = `RSI is overbought at ${rsi} and price is stretched versus its recent range${bollinger ? ` (above ${fmt(bollinger.upper)})` : ''}. This isn't an attractive entry as-is — waiting for a pullback toward ${fmt(sma20)} or the golden zone would offer better risk/reward.`;
+  } else if (overallScore != null && overallScore <= 40) {
+    core = `Momentum is weak with no clear reversal signal yet. Wait for either RSI to turn up from an oversold level, or a confirmed bounce, before considering an entry.`;
+  } else {
+    core = `No strong setup right now — RSI is neutral at ${rsi ?? '—'}.${fib ? ` Worth checking back if price approaches the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}).` : ''}`;
   }
 
-  if (rsi != null && rsi >= 70) {
-    return `RSI is overbought at ${rsi} and price is stretched versus its recent range${bollinger ? ` (above ${fmt(bollinger.upper)})` : ''}. This isn't an attractive entry as-is — waiting for a pullback toward ${fmt(sma20)} or the golden zone would offer better risk/reward.${weeklyTrendNote}`;
-  }
-
-  if (overallScore != null && overallScore <= 40) {
-    return `Momentum is weak with no clear reversal signal yet.${invalidationNote ? ' Wait for either RSI to turn up from an oversold level, or a confirmed bounce, before considering an entry.' : ' Wait for a clearer signal before considering an entry.'}${weeklyTrendNote}`;
-  }
-
-  return `No strong setup right now — RSI is neutral at ${rsi ?? '—'}.${fib ? ` Worth checking back if price approaches the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}).` : ''}${weeklyTrendNote}`;
+  return `${core}${invalidationNote}${extensionNote}${weeklyTrendNote}`;
 }
 
 async function analyzeSymbol(symbol) {
@@ -293,9 +338,12 @@ async function analyzeSymbol(symbol) {
 
   const weekly = aggregateToWeekly(daily);
 
-  const tf4h = analyzeTimeframe(fourHour, 60);
-  const tf1d = analyzeTimeframe(daily, 90);
-  const tf1w = analyzeTimeframe(weekly, 60);
+  // Log-scale retracements for daily/weekly, where large percentage moves
+  // are common and log scale tends to track historical reactions better.
+  // 4H stays linear — short-term moves rarely differ much between the two.
+  const tf4h = analyzeTimeframe(fourHour, 60, false);
+  const tf1d = analyzeTimeframe(daily, 90, true);
+  const tf1w = analyzeTimeframe(weekly, 60, true);
 
   // Weighted overall score: weekly = trend context, daily = intermediate, 4h = entry timing
   const weights = { w: 0.4, d: 0.35, h: 0.25 };
