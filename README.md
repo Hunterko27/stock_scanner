@@ -56,6 +56,15 @@ relative to a handful of well-known technical signals, nothing more.
   per symbol to avoid paying for the same check twice. **The first time you use this,
   check your Twelve Data usage dashboard afterward** to see what it actually cost
   before relying on it for many stocks.
+- **P/E ratio check (opt-in, manual only)**: a "Check P/E ratio" button on each card
+  looks up trailing/forward P/E via **Yahoo Finance** (`yahoo-finance2`'s `quote()`
+  method), not Twelve Data — P/E and other fundamentals aren't available at all on
+  Twelve Data's free tier (that data starts at their paid "Grow" plan). Yahoo's
+  unofficial API is known to be intermittently unreliable (see the note in git history
+  about the crumb/429 issue that caused a full outage earlier in this project) — this
+  feature is deliberately isolated in its own function (`pe-ratio.js`) so that if Yahoo
+  has problems again, it only breaks this one button, never the core Twelve
+  Data-based scanning. Results are cached 24 hours per symbol.
 - **Pacing**: to stay under the free tier's 8 requests/minute cap, the app dispatches
   one new stock scan roughly every 16 seconds rather than firing them all at once.
   Cards fill in gradually — this is expected, not a bug.

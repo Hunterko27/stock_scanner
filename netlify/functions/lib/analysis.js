@@ -281,18 +281,27 @@ function fmt(n) {
   return n != null ? `$${Number(n).toFixed(2)}` : null;
 }
 
-function buildGuidance(tf1d, tf1w, overallScore) {
-  if (!tf1d || tf1d.insufficientData) {
-    return 'Not enough daily history yet to generate guidance for this stock.';
+function buildGuidance(tf4h, tf1d, tf1w) {
+  const candidates = [
+    { key: '4H', tf: tf4h },
+    { key: 'Daily', tf: tf1d },
+    { key: 'Weekly', tf: tf1w },
+  ].filter((c) => c.tf && !c.tf.insufficientData);
+
+  if (!candidates.length) {
+    return 'Not enough history yet to generate guidance for this stock.';
   }
 
-  const { rsi, price, fib, sma20, bollinger } = tf1d;
-  const weeklyTrendNote = tf1w && !tf1w.insufficientData && tf1w.sma20 != null && tf1w.sma50 != null
-    ? ` On the weekly timeframe, the broader trend is ${tf1w.sma20 > tf1w.sma50 ? 'bullish' : 'bearish'} (20 ${tf1w.sma20 > tf1w.sma50 ? '>' : '<'} 50 MA).`
-    : '';
+  // Lead with whichever timeframe's own score is most decisive (furthest
+  // from the neutral baseline of 50) — a strong 4H signal shouldn't get
+  // buried under a quiet daily reading just because daily happens to be
+  // the default. The overall blended score can be driven by any timeframe.
+  const lead = candidates.reduce((best, c) =>
+    Math.abs(c.tf.score - 50) > Math.abs(best.tf.score - 50) ? c : best
+  );
 
-  // Invalidation level: the swing low underpinning the current setup. If
-  // price closes below it, the structure the setup relies on has broken.
+  const { rsi, fib, sma20, bollinger, score, label } = lead.tf;
+
   const invalidation = fib ? fmt(fib.swingLow) : null;
   const invalidationNote = invalidation
     ? ` A close below ${invalidation} would invalidate this setup.`
@@ -319,13 +328,37 @@ function buildGuidance(tf1d, tf1w, overallScore) {
     }
   } else if (rsi != null && rsi >= 70) {
     core = `RSI is overbought at ${rsi} and price is stretched versus its recent range${bollinger ? ` (above ${fmt(bollinger.upper)})` : ''}. This isn't an attractive entry as-is — waiting for a pullback toward ${fmt(sma20)} or the golden zone would offer better risk/reward.`;
-  } else if (overallScore != null && overallScore <= 40) {
+  } else if (rsi != null && rsi < 30) {
+    core = `RSI is oversold at ${rsi}, suggesting the recent decline may be stretched. There's no clear golden zone nearby to confirm a bounce level here, so watch for a stabilization signal — RSI turning back up, a reversal candle — rather than assuming the drop is already done.`;
+  } else if (score <= 40) {
     core = `Momentum is weak with no clear reversal signal yet. Wait for either RSI to turn up from an oversold level, or a confirmed bounce, before considering an entry.`;
   } else {
-    core = `No strong setup right now — RSI is neutral at ${rsi ?? '—'}.${fib ? ` Worth checking back if price approaches the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}).` : ''}`;
+    core = `No strong setup right now on this timeframe — RSI is neutral at ${rsi ?? '—'}.${fib ? ` Worth checking back if price approaches the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}).` : ''}`;
   }
 
-  return `${core}${invalidationNote}${extensionNote}${weeklyTrendNote}`;
+  // Say which timeframe is being described whenever it isn't the obvious
+  // default (daily) — otherwise a strong 4H or weekly signal can silently
+  // narrate as if it were about daily, which is exactly what caused
+  // confusion before.
+  const prefix = `${lead.key} (${label}): `;
+
+  // Flag whether the other timeframes agree or disagree, rather than
+  // silently presenting one timeframe's story as if it were the whole
+  // picture — a blended score can land on "Golden Opportunity" even when
+  // only one timeframe is genuinely strong and the others are lukewarm.
+  const others = candidates.filter((c) => c.key !== lead.key);
+  let synthesisNote = '';
+  if (others.length) {
+    const disagreeing = others.filter((c) => Math.abs(c.tf.score - score) >= 20);
+    if (disagreeing.length) {
+      const parts = disagreeing.map((c) => `${c.key} looks ${c.tf.label.toLowerCase()}`);
+      synthesisNote = ` Worth noting: ${parts.join(', ')} — these timeframes aren't fully confirming each other yet, so treat this as a ${lead.key}-driven setup rather than one aligned across the board.`;
+    } else {
+      synthesisNote = ` This is broadly consistent with the ${others.map((c) => c.key).join(' and ')} timeframe${others.length > 1 ? 's' : ''} too, adding some confidence.`;
+    }
+  }
+
+  return `${prefix}${core}${invalidationNote}${extensionNote}${synthesisNote}`;
 }
 
 async function analyzeSymbol(symbol) {
@@ -369,7 +402,7 @@ async function analyzeSymbol(symbol) {
     updatedAt: new Date().toISOString(),
     overallScore,
     overallLabel,
-    guidance: buildGuidance(tf1d, tf1w, overallScore),
+    guidance: buildGuidance(tf4h, tf1d, tf1w),
     timeframes: { '4h': tf4h, '1d': tf1d, '1w': tf1w },
   };
 }

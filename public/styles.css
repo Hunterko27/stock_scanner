@@ -272,6 +272,25 @@ main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 60px; }
 }
 .earnings-result.warn { color: var(--brick); font-weight: 600; }
 
+.pe-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.pe-btn:hover { border-color: var(--gold); color: var(--text); }
+.pe-btn:disabled { opacity: 0.5; cursor: default; }
+
+.pe-result {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin-top: 6px;
+}
+.pe-result.warn { color: var(--brick); font-weight: 600; }
+
 .sparkline-wrap { height: 54px; margin: 12px 0 8px; }
 
 .tf-tabs {

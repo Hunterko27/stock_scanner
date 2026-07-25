@@ -5,6 +5,7 @@
   "description": "Personal technical-analysis scanner (Bollinger Bands, MAs, RSI, Fibonacci) across 4H/1D/1W timeframes.",
   "dependencies": {
     "@netlify/blobs": "^10.7.9",
-    "technicalindicators": "^3.1.0"
+    "technicalindicators": "^3.1.0",
+    "yahoo-finance2": "^4.0.0"
   }
 }

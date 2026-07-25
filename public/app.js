@@ -164,26 +164,17 @@ function renderCardError(card, message) {
   panel.innerHTML = `<div class="card-status">${message}</div>`;
   el('.sparkline-wrap', card).style.display = 'none';
   el('.tf-tabs', card).style.display = 'none';
-  el('.earnings-row', card).style.display = 'none';
+  elAll('.earnings-row', card).forEach((row) => { row.style.display = 'none'; });
 }
 
 function renderSignalChips(container, signals) {
   container.innerHTML = '';
-  signals
-    .filter((s) => s.type !== 'info')
-    .forEach((s) => {
-      const chip = document.createElement('span');
-      chip.className = `chip ${s.type}`;
-      chip.textContent = s.label;
-      container.appendChild(chip);
-    });
-  const info = signals.find((s) => s.type === 'info');
-  if (info) {
+  signals.forEach((s) => {
     const chip = document.createElement('span');
-    chip.className = 'chip';
-    chip.textContent = info.label;
+    chip.className = s.type === 'info' ? 'chip' : `chip ${s.type}`;
+    chip.textContent = s.label;
     container.appendChild(chip);
-  }
+  });
 }
 
 function formatExtensions(fib) {
@@ -328,6 +319,36 @@ function renderCardResult(card, analysis) {
     } finally {
       earningsBtn.disabled = false;
       earningsBtn.textContent = 'Check earnings date';
+    }
+  });
+
+  const peBtn = el('.pe-btn', card);
+  const peResult = el('.pe-result', card);
+  peBtn.addEventListener('click', async () => {
+    peBtn.disabled = true;
+    peBtn.textContent = 'Checking…';
+    peResult.textContent = '';
+    peResult.className = 'pe-result';
+    try {
+      const res = await fetch(`/api/pe?symbol=${encodeURIComponent(analysis.symbol)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        peResult.textContent = data.error || 'Could not check P/E ratio.';
+        peResult.className = 'pe-result warn';
+      } else if (data.trailingPE == null && data.forwardPE == null) {
+        peResult.textContent = 'No P/E data available (may not be profitable, or Yahoo has no data for this symbol).';
+      } else {
+        const parts = [];
+        if (data.trailingPE != null) parts.push(`Trailing P/E: ${data.trailingPE.toFixed(1)}`);
+        if (data.forwardPE != null) parts.push(`Forward P/E: ${data.forwardPE.toFixed(1)}`);
+        peResult.textContent = parts.join(' | ');
+      }
+    } catch (err) {
+      peResult.textContent = 'Could not check P/E ratio — try again shortly.';
+      peResult.className = 'pe-result warn';
+    } finally {
+      peBtn.disabled = false;
+      peBtn.textContent = 'Check P/E ratio';
     }
   });
 }

@@ -21,6 +21,11 @@
   to = "/.netlify/functions/earnings"
   status = 200
 
+[[redirects]]
+  from = "/api/pe"
+  to = "/.netlify/functions/pe-ratio"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]
