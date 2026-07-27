@@ -189,13 +189,87 @@ function computeFibExtensions(hh, ll, direction, useLog) {
   return levels;
 }
 
+// ---------- RSI divergence & volume confirmation ----------
+
+const RSI_PERIOD = 14;
+
+// Finds local extrema (swing highs/lows) using a symmetric window — a point
+// qualifies as a pivot only if it's the max/min among `span` bars on each
+// side of it. This filters out noise while still catching real swings.
+function findPivots(values, span = 3) {
+  const pivots = [];
+  for (let i = span; i < values.length - span; i++) {
+    const windowSlice = values.slice(i - span, i + span + 1);
+    const center = values[i];
+    const maxInWindow = Math.max(...windowSlice);
+    const minInWindow = Math.min(...windowSlice);
+    if (center === maxInWindow) pivots.push({ index: i, value: center, type: 'high' });
+    else if (center === minInWindow) pivots.push({ index: i, value: center, type: 'low' });
+  }
+  return pivots;
+}
+
+// Compares the two most recent comparable price pivots against RSI at those
+// same points in time. Bearish divergence: price makes a higher high while
+// RSI makes a lower high (momentum fading even as price pushes up). Bullish
+// divergence: price makes a lower low while RSI makes a higher low (selling
+// momentum fading even as price pushes down).
+function detectDivergence(closes, rsiValues, lookback) {
+  const startIdx = Math.max(0, closes.length - lookback);
+  const priceSlice = closes.slice(startIdx);
+  const pivots = findPivots(priceSlice, 3).map((p) => ({ ...p, index: p.index + startIdx }));
+
+  const priceHighs = pivots.filter((p) => p.type === 'high');
+  const priceLows = pivots.filter((p) => p.type === 'low');
+
+  function rsiAt(priceIndex) {
+    const rsiIndex = priceIndex - RSI_PERIOD;
+    return rsiIndex >= 0 && rsiIndex < rsiValues.length ? rsiValues[rsiIndex] : null;
+  }
+
+  if (priceHighs.length >= 2) {
+    const [h1, h2] = priceHighs.slice(-2);
+    const rsi1 = rsiAt(h1.index);
+    const rsi2 = rsiAt(h2.index);
+    if (rsi1 != null && rsi2 != null && h2.value > h1.value && rsi2 < rsi1) {
+      return { type: 'bearish', priceFrom: h1.value, priceTo: h2.value, rsiFrom: rsi1, rsiTo: rsi2 };
+    }
+  }
+
+  if (priceLows.length >= 2) {
+    const [l1, l2] = priceLows.slice(-2);
+    const rsi1 = rsiAt(l1.index);
+    const rsi2 = rsiAt(l2.index);
+    if (rsi1 != null && rsi2 != null && l2.value < l1.value && rsi2 > rsi1) {
+      return { type: 'bullish', priceFrom: l1.value, priceTo: l2.value, rsiFrom: rsi1, rsiTo: rsi2 };
+    }
+  }
+
+  return null;
+}
+
+// Compares average volume over the most recent bars against the bars just
+// before that, as a lightweight "is conviction fading or building" check —
+// used to confirm (or not) whatever divergence signal is found.
+function computeVolumeTrend(candles, recentN = 5, priorN = 5) {
+  if (candles.length < recentN + priorN) return null;
+  const vols = candles.map((c) => c.volume || 0);
+  const recent = vols.slice(-recentN);
+  const prior = vols.slice(-(recentN + priorN), -recentN);
+  const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const priorAvg = prior.reduce((a, b) => a + b, 0) / prior.length;
+  if (priorAvg === 0) return null;
+  const changePct = ((recentAvg - priorAvg) / priorAvg) * 100;
+  return { recentAvg, priorAvg, changePct: Number(changePct.toFixed(1)), direction: changePct >= 0 ? 'rising' : 'falling' };
+}
+
 function analyzeTimeframe(candles, fibLookback, useLog = false) {
   const closes = candles.map((c) => c.close);
   if (closes.length < 30) {
     return { insufficientData: true };
   }
 
-  const rsiValues = RSI.calculate({ values: closes, period: 14 });
+  const rsiValues = RSI.calculate({ values: closes, period: RSI_PERIOD });
   const bbValues = BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
   const sma20Values = SMA.calculate({ values: closes, period: 20 });
   const sma50Values = SMA.calculate({ values: closes, period: Math.min(50, Math.floor(closes.length / 2)) });
@@ -209,6 +283,8 @@ function analyzeTimeframe(candles, fibLookback, useLog = false) {
   const sma50 = sma50Values[sma50Values.length - 1];
   const sma200 = sma200Values.length ? sma200Values[sma200Values.length - 1] : null;
   const fib = computeFibZone(candles, fibLookback, useLog);
+  const divergence = rsiValues.length >= 20 ? detectDivergence(closes, rsiValues, fibLookback) : null;
+  const volumeTrend = computeVolumeTrend(candles);
 
   // ---- Component scoring (each contributes to a 0-100 opportunity score) ----
   let score = 50; // neutral baseline
@@ -252,6 +328,29 @@ function analyzeTimeframe(candles, fibLookback, useLog = false) {
     }
   }
 
+  if (volumeTrend) {
+    signals.push({ type: 'info', label: `Volume trend: ${volumeTrend.direction} (${volumeTrend.changePct >= 0 ? '+' : ''}${volumeTrend.changePct}%)` });
+  }
+
+  if (divergence) {
+    const volumeConfirms = volumeTrend && volumeTrend.direction === 'falling';
+    if (divergence.type === 'bearish') {
+      const penalty = volumeConfirms ? 20 : 15;
+      score -= penalty;
+      signals.push({
+        type: 'caution',
+        label: `Bearish RSI divergence (price higher high, RSI lower high)${volumeConfirms ? ' + fading volume on the rally' : ''}`,
+      });
+    } else if (divergence.type === 'bullish') {
+      const bonus = volumeConfirms ? 20 : 15;
+      score += bonus;
+      signals.push({
+        type: 'bullish',
+        label: `Bullish RSI divergence (price lower low, RSI higher low)${volumeConfirms ? ' + fading volume on the decline' : ''}`,
+      });
+    }
+  }
+
   score = Math.max(0, Math.min(100, Math.round(score)));
 
   let label = 'Neutral';
@@ -268,6 +367,8 @@ function analyzeTimeframe(candles, fibLookback, useLog = false) {
     sma50: sma50 != null ? Number(sma50.toFixed(2)) : null,
     sma200: sma200 != null ? Number(sma200.toFixed(2)) : null,
     fib,
+    divergence,
+    volumeTrend,
     score,
     label,
     signals,
@@ -315,6 +416,14 @@ function buildGuidance(tf4h, tf1d, tf1w) {
     ? ` If the move continues past the recent ${fib.direction === 'uptrend_pullback' ? 'high' : 'low'} instead, reference targets sit near ${fmt(fib.extensions['1.272'])} and ${fmt(fib.extensions['1.618'])}.`
     : '';
 
+  const { divergence, volumeTrend } = lead.tf;
+  const volumeConfirmsDivergence = divergence && volumeTrend && volumeTrend.direction === 'falling';
+  const divergenceNote = divergence
+    ? divergence.type === 'bearish'
+      ? ` Also worth flagging: RSI is showing bearish divergence — price made a higher high while RSI made a lower high, often an early sign that upward momentum is fading before price itself turns.${volumeConfirmsDivergence ? ' Volume has been declining on this rally too, adding to the case that conviction is weakening.' : ''}`
+      : ` Also worth flagging: RSI is showing bullish divergence — price made a lower low while RSI made a higher low, often an early sign that selling pressure is fading before price itself turns.${volumeConfirmsDivergence ? ' Volume has been declining on this decline too, consistent with sellers losing conviction.' : ''}`
+    : '';
+
   let core;
 
   if (fib && fib.inZone) {
@@ -358,7 +467,7 @@ function buildGuidance(tf4h, tf1d, tf1w) {
     }
   }
 
-  return `${prefix}${core}${invalidationNote}${extensionNote}${synthesisNote}`;
+  return `${prefix}${core}${invalidationNote}${extensionNote}${divergenceNote}${synthesisNote}`;
 }
 
 async function analyzeSymbol(symbol) {

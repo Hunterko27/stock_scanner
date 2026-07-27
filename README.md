@@ -25,6 +25,20 @@ relative to a handful of well-known technical signals, nothing more.
   - Bollinger Bands(20, 2σ) — price position within the bands
   - SMA20 vs SMA50 — trend context, and healthy pullbacks toward the average
   - SMA200 — long-term trend context (only shown once there's enough history)
+  - **RSI divergence** — compares the two most recent comparable swing points in price
+    against RSI at those same points. Bearish divergence: price makes a *higher high*
+    while RSI makes a *lower high* (momentum fading even as price pushes up — often an
+    early warning before a top). Bullish divergence: price makes a *lower low* while
+    RSI makes a *higher low* (selling momentum fading before a bottom). Divergence is
+    detected using swing/fractal pivots (a point must be the local max/min within a
+    7-bar window to count), which means it's inherently a few bars delayed — it can't
+    flag a divergence at the very latest bar, only once a swing point is confirmed by
+    a bit of price action afterward.
+  - **Volume trend** — compares average volume over the last 5 bars against the 5
+    before that. Used mainly to confirm (or not) a divergence signal: declining volume
+    on the rally that produced a bearish divergence, or declining volume on the decline
+    that produced a bullish divergence, adds extra weight to the score and the guidance
+    text explicitly calls this out when it applies.
   - Fibonacci retracement — is price sitting in the 61.8%\u201378.6% "golden zone" of
     the most recent swing? (Widened from the narrower 61.8\u201365% "pocket" some
     traders use — 78.6% is the level most technical analysts treat as the practical
