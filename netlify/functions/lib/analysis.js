@@ -161,12 +161,15 @@ function computeFibZone(candles, lookback, useLog = false) {
       '0.786': level786,
       '1.0': to,
     },
-    // Extensions always use linear scale, even when retracements use log —
-    // traders conventionally read extensions as simple multiples of the
-    // price range, and log-scale extensions compound into unrealistic
-    // numbers at higher ratios (e.g. 2.618x on a 10x mover can project a
-    // target many multiples above any plausible near-term price).
-    extensions: computeFibExtensions(hh, ll, direction, false),
+    // Extensions always use log scale, even on timeframes where the
+    // retracement itself is linear — this guarantees a positive result no
+    // matter how large the percentage move was. Linear extensions can
+    // subtract more dollars than the anchor price actually has for a stock
+    // that's moved a huge percentage (e.g. a $10 -> $280 mover), producing
+    // a nonsensical negative "price" at higher ratios like 2.618. Log scale
+    // structurally cannot do that — deeper extension levels just approach
+    // (never cross) zero, which is the correct real-world constraint.
+    extensions: computeFibExtensions(hh, ll, direction, true),
   };
 }
 
