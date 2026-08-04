@@ -51,8 +51,23 @@ relative to a handful of well-known technical signals, nothing more.
     enough for the difference to matter. Each card also shows **extension targets**
     (127.2%, 161.8%, 227.2%, 261.8%) — a separate calculation projecting where price
     might head if the move continues *past* the swing, rather than where a pullback
-    might stall. Extensions are always linear, even when retracements use log scale,
-    since log-scale extensions compound into unrealistic numbers at higher ratios.
+    might stall. Extensions always use log scale too (regardless of the retracement's
+    own setting) — a linear calculation can subtract more dollars than the anchor
+    price actually has for a stock that's moved a very large percentage, producing a
+    mathematically impossible negative "price." Log scale structurally cannot do that.
+  - **Cross-timeframe golden-zone context**: a single timeframe's swing high/low can't
+    tell apart two very different situations that look identical in isolation — a
+    "pullback support" zone that's genuinely a dip within a bigger uptrend, versus one
+    that's just a brief pause within a bigger downtrend (support likely to fail); or a
+    "bounce resistance" zone within a downtrend that's likely to fail and resume the
+    decline, versus one that's actually a genuine reclaim within a bigger uptrend. 4H
+    and daily now check the **weekly timeframe's own trend direction** (simple 20/50 MA
+    comparison) to tell these apart, and discount or boost the golden-zone score
+    accordingly — a "bounce" zone that the weekly trend confirms as a downtrend gets
+    heavily discounted (and flagged as caution, not bullish), while one weekly
+    contradicts gets a more moderate read. Weekly's own zone check has no higher
+    timeframe to compare against, so it's unaffected. If weekly data is insufficient,
+    no discount is applied (we don't guess when we don't have a basis to).
   - The three timeframes are then blended (Weekly 40% / Daily 35% / 4H 25%) into one
     overall score, shown as the gold dial on each card.
 - **Storage**: your watchlist and scan list are saved server-side via Netlify Blobs, so
@@ -128,6 +143,21 @@ ranked alongside whatever else is already there.
 Keep in mind the free tier's daily cap (800 requests = ~400 full stock scans/day) — for
 personal use, checking the app a handful of times a day with a reasonable watchlist size
 comfortably fits within that.
+
+## Rolling back the cross-timeframe golden-zone scoring change
+
+`backups/analysis.js.before-cross-timeframe-context` is the exact version of
+`netlify/functions/lib/analysis.js` from right before the cross-timeframe context
+feature was added (see above). If that change causes problems, you can revert by
+copying it back over the live file:
+
+```bash
+cp backups/analysis.js.before-cross-timeframe-context netlify/functions/lib/analysis.js
+git add . && git commit -m "Revert cross-timeframe golden-zone scoring" && git push
+```
+
+This file lives outside `netlify/functions/` on purpose (it's in a root-level
+`backups/` folder) so Netlify never mistakes it for a deployable function.
 
 ## Known limitations / things to keep an eye on
 

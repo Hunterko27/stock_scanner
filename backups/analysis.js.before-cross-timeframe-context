@@ -266,46 +266,7 @@ function computeVolumeTrend(candles, recentN = 5, priorN = 5) {
   return { recentAvg, priorAvg, changePct: Number(changePct.toFixed(1)), direction: changePct >= 0 ? 'rising' : 'falling' };
 }
 
-// ---------- Cross-timeframe golden-zone context ----------
-//
-// A single timeframe's swing high/low can't tell apart two very different
-// situations that look identical in isolation:
-//   - uptrend_pullback zone = a correction within a BIGGER uptrend (genuine
-//     support, bullish) vs. just a brief pause within a bigger downtrend
-//     (support likely to fail).
-//   - downtrend_bounce zone = a corrective rally within a BIGGER downtrend
-//     (resistance, likely to fail and resume the decline) vs. a genuine
-//     reclaim within a bigger uptrend (more credible as a real bottom).
-// A higher timeframe's own trend (simple MA direction) resolves this
-// ambiguity — when we have it. When we don't (insufficient data), we apply
-// no discount at all, since we have no basis to doubt the read.
-function fibZoneMultiplier(direction, higherTrendBullish) {
-  if (higherTrendBullish == null) return 1.0;
-  if (direction === 'uptrend_pullback') {
-    return higherTrendBullish ? 1.0 : 0.4;
-  }
-  return higherTrendBullish ? 0.7 : 0.2; // downtrend_bounce
-}
-
-function fibZoneSignalType(multiplier) {
-  if (multiplier >= 0.7) return 'bullish';
-  if (multiplier >= 0.3) return 'watch';
-  return 'caution';
-}
-
-function fibZoneContextNote(direction, higherTrendBullish) {
-  if (higherTrendBullish == null) return '';
-  if (direction === 'uptrend_pullback') {
-    return higherTrendBullish
-      ? ' — higher timeframe trend agrees'
-      : ' — but higher timeframe trend disagrees, weaker case';
-  }
-  return higherTrendBullish
-    ? ' — higher timeframe trend disagrees with the downtrend read, possible genuine reclaim'
-    : ' — higher timeframe confirms the downtrend, bounce more likely to fail';
-}
-
-function analyzeTimeframe(candles, fibLookback, useLog = false, higherTrendBullish = null) {
+function analyzeTimeframe(candles, fibLookback, useLog = false) {
   const closes = candles.map((c) => c.close);
   if (closes.length < 30) {
     return { insufficientData: true };
@@ -348,25 +309,8 @@ function analyzeTimeframe(candles, fibLookback, useLog = false, higherTrendBulli
   }
 
   if (fib) {
-    const zoneMult = fibZoneMultiplier(fib.direction, higherTrendBullish);
-    const contextNote = fibZoneContextNote(fib.direction, higherTrendBullish);
-    const zoneTypeLabel = fib.direction === 'uptrend_pullback' ? 'pullback' : 'bounce';
-
-    if (fib.inZone) {
-      const bonus = Math.round(25 * zoneMult);
-      score += bonus;
-      signals.push({
-        type: fibZoneSignalType(zoneMult),
-        label: `In Fibonacci golden zone (${zoneTypeLabel})${contextNote}`,
-      });
-    } else if (fib.approaching) {
-      const bonus = Math.round(10 * zoneMult);
-      score += bonus;
-      signals.push({
-        type: fibZoneSignalType(zoneMult),
-        label: `Approaching golden zone (${fib.distancePct}% away)${contextNote}`,
-      });
-    }
+    if (fib.inZone) { score += 25; signals.push({ type: 'bullish', label: `In Fibonacci golden zone (${fib.direction === 'uptrend_pullback' ? 'pullback' : 'bounce'})` }); }
+    else if (fib.approaching) { score += 10; signals.push({ type: 'watch', label: `Approaching golden zone (${fib.distancePct}% away)` }); }
   }
 
   if (sma20 != null && sma50 != null) {
@@ -539,21 +483,12 @@ async function analyzeSymbol(symbol) {
 
   const weekly = aggregateToWeekly(daily);
 
-  // Weekly is computed first since it has no higher timeframe to check
-  // against — its own golden-zone reads use no cross-timeframe discount.
-  // Its simple MA trend direction (20 vs 50) then gets passed down to 4H
-  // and daily, so a bounce/pullback zone on those timeframes can be scored
-  // in light of the bigger picture rather than in isolation.
-  const tf1w = analyzeTimeframe(weekly, 60, true);
-  const weeklyTrendBullish = !tf1w.insufficientData && tf1w.sma20 != null && tf1w.sma50 != null
-    ? tf1w.sma20 > tf1w.sma50
-    : null;
-
   // Log-scale retracements for daily/weekly, where large percentage moves
   // are common and log scale tends to track historical reactions better.
   // 4H stays linear — short-term moves rarely differ much between the two.
-  const tf4h = analyzeTimeframe(fourHour, 60, false, weeklyTrendBullish);
-  const tf1d = analyzeTimeframe(daily, 90, true, weeklyTrendBullish);
+  const tf4h = analyzeTimeframe(fourHour, 60, false);
+  const tf1d = analyzeTimeframe(daily, 90, true);
+  const tf1w = analyzeTimeframe(weekly, 60, true);
 
   // Weighted overall score: weekly = trend context, daily = intermediate, 4h = entry timing
   const weights = { w: 0.4, d: 0.35, h: 0.25 };
