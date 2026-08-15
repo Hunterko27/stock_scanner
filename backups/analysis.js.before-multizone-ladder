@@ -192,91 +192,6 @@ function computeFibExtensions(hh, ll, direction, useLog) {
   return levels;
 }
 
-// ---------- Multi-zone support/resistance ladder ----------
-//
-// A single golden zone only ever shows one side of the picture — this
-// gathers every reference level already computed elsewhere (both
-// Fibonacci golden zones, not just whichever direction the swing happened
-// to run; extensions in both directions; Bollinger Bands; moving averages;
-// recent swing pivots) and classifies each purely by where it sits
-// relative to CURRENT price: below price = support ("buy zone"), above
-// price = resistance ("sell zone"). Because the role is derived fresh from
-// current price every time rather than baked into swing history, a level
-// automatically "flips" from resistance to support (or back) the moment
-// price crosses it — no special-case logic needed for that.
-//
-// Deliberately simple for now (Option 1, per user request): every
-// candidate within the top few nearest each side is shown as-is, with no
-// merging of levels that happen to sit very close together (that's the
-// planned Option 2 for later, if this turns out to be too cluttered).
-function buildLevelLadder(candles, price, bb, sma20, sma50, sma200, fibLookback, useLog) {
-  const candidates = [];
-  const add = (value, label) => {
-    if (value == null || !Number.isFinite(value) || value <= 0) return;
-    candidates.push({ price: value, label });
-  };
-
-  const window = candles.slice(-fibLookback);
-  if (window.length >= 10) {
-    let hh = -Infinity;
-    let ll = Infinity;
-    window.forEach((c) => {
-      if (c.high > hh) hh = c.high;
-      if (c.low < ll) ll = c.low;
-    });
-
-    if (hh > 0 && ll > 0 && hh > ll) {
-      // Golden zone, BOTH directions — not just whichever one the
-      // chronological swing order happened to produce.
-      const pbLow = retraceLevel(hh, ll, 0.786, useLog);
-      const pbHigh = retraceLevel(hh, ll, 0.618, useLog);
-      add(Math.min(pbLow, pbHigh), 'Golden zone (pullback) low');
-      add(Math.max(pbLow, pbHigh), 'Golden zone (pullback) high');
-
-      const bnLow = retraceLevel(ll, hh, 0.618, useLog);
-      const bnHigh = retraceLevel(ll, hh, 0.786, useLog);
-      add(Math.min(bnLow, bnHigh), 'Golden zone (bounce) low');
-      add(Math.max(bnLow, bnHigh), 'Golden zone (bounce) high');
-
-      // Extensions, both directions — nearer two ratios only, to keep the
-      // candidate pool reasonable (the full 4-ratio set is still used for
-      // the single-direction fib.extensions field elsewhere).
-      add(retraceLevel(ll, hh, 1.272, true), 'Extension 127.2% (upside)');
-      add(retraceLevel(ll, hh, 1.618, true), 'Extension 161.8% (upside)');
-      add(retraceLevel(hh, ll, 1.272, true), 'Extension 127.2% (downside)');
-      add(retraceLevel(hh, ll, 1.618, true), 'Extension 161.8% (downside)');
-
-      // Recent swing pivots — actual historical turning points, reusing
-      // the same pivot detector built for RSI divergence, rather than only
-      // the single overall swing high/low.
-      const closesWindow = window.map((c) => c.close);
-      const pivots = findPivots(closesWindow, 3);
-      pivots.filter((p) => p.type === 'high').slice(-3).forEach((p) => add(p.value, 'Prior swing high'));
-      pivots.filter((p) => p.type === 'low').slice(-3).forEach((p) => add(p.value, 'Prior swing low'));
-    }
-  }
-
-  add(bb && bb.upper, 'Upper Bollinger Band');
-  add(bb && bb.lower, 'Lower Bollinger Band');
-  add(sma20, '20-period MA');
-  add(sma50, '50-period MA');
-  add(sma200, '200-period MA');
-
-  const support = candidates
-    .filter((c) => c.price < price)
-    .sort((a, b) => b.price - a.price) // nearest below price first
-    .slice(0, 4)
-    .map((c) => ({ price: Number(c.price.toFixed(2)), label: c.label }));
-
-  const resistance = candidates
-    .filter((c) => c.price > price)
-    .sort((a, b) => a.price - b.price) // nearest above price first
-    .slice(0, 4)
-    .map((c) => ({ price: Number(c.price.toFixed(2)), label: c.label }));
-
-  return { support, resistance };
-}
-
 // ---------- RSI divergence & volume confirmation ----------
 
 const RSI_PERIOD = 14;
@@ -412,7 +327,6 @@ function analyzeTimeframe(candles, fibLookback, useLog = false, higherTrendBulli
   const fib = computeFibZone(candles, fibLookback, useLog);
   const divergence = rsiValues.length >= 20 ? detectDivergence(closes, rsiValues, fibLookback) : null;
   const volumeTrend = computeVolumeTrend(candles);
-  const levels = buildLevelLadder(candles, price, bb, sma20, sma50, sma200, fibLookback, useLog);
 
   // ---- Component scoring (each contributes to a 0-100 opportunity score) ----
   let score = 50; // neutral baseline
@@ -514,7 +428,6 @@ function analyzeTimeframe(candles, fibLookback, useLog = false, higherTrendBulli
     fib,
     divergence,
     volumeTrend,
-    levels,
     score,
     label,
     signals,

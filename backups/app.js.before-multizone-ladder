@@ -186,23 +186,6 @@ function formatExtensions(fib) {
     .join(', ');
 }
 
-function renderLevelLadder(tf) {
-  if (!tf.levels) return '';
-  const renderRows = (list, cls) =>
-    list.length
-      ? list.map((l) => `<div class="ladder-row ${cls}"><span class="ladder-price">$${l.price}</span><span class="ladder-label">${l.label}</span></div>`).join('')
-      : '<div class="ladder-empty">None nearby</div>';
-
-  return `
-    <div class="ladder-section">
-      <div class="ladder-title resistance">Resistance (sell zone)</div>
-      ${renderRows(tf.levels.resistance, 'resistance')}
-      <div class="ladder-title support">Support (buy zone)</div>
-      ${renderRows(tf.levels.support, 'support')}
-    </div>
-  `;
-}
-
 function renderTimeframePanel(panelEl, tf) {
   if (!tf || tf.insufficientData) {
     panelEl.innerHTML = '<div class="card-status">Not enough history yet for this timeframe.</div>';
@@ -215,7 +198,6 @@ function renderTimeframePanel(panelEl, tf) {
     <div class="metric-row"><span>SMA20 / SMA50 / SMA200</span><span>${tf.sma20 ?? '—'} / ${tf.sma50 ?? '—'} / ${tf.sma200 ?? '—'}</span></div>
     <div class="metric-row"><span>Fib golden zone${tf.fib && tf.fib.useLog ? ' (log)' : ''}</span><span>${tf.fib ? `$${tf.fib.goldenLow.toFixed(2)} – $${tf.fib.goldenHigh.toFixed(2)}` : '—'}</span></div>
     <div class="metric-row"><span>Extension targets</span><span>${tf.fib && tf.fib.extensions ? formatExtensions(tf.fib) : '—'}</span></div>
-    ${renderLevelLadder(tf)}
     <div class="signal-chips"></div>
   `;
   renderSignalChips(el('.signal-chips', panelEl), tf.signals);

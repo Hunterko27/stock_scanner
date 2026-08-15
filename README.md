@@ -144,6 +144,32 @@ Keep in mind the free tier's daily cap (800 requests = ~400 full stock scans/day
 personal use, checking the app a handful of times a day with a reasonable watchlist size
 comfortably fits within that.
 
+## Rolling back the multi-zone support/resistance ladder
+
+Each timeframe panel now shows up to 4 support levels (below current price) and 4
+resistance levels (above it), sourced from both Fibonacci golden zones (not just
+whichever direction the swing happened to run), extensions in both directions,
+Bollinger Bands, moving averages, and recent swing pivots — sorted nearest-to-price
+first. A level's role (support vs. resistance) is derived fresh from its position
+relative to current price every scan, not baked into swing history, so a broken
+support level automatically "acts as" resistance the next time price approaches it
+from below, with no special-case code needed for that. This is the simple version
+(every candidate shown as-is) — merging levels that cluster close together into a
+single "confluence" entry is a possible future improvement if the list feels
+cluttered in practice.
+
+`backups/analysis.js.before-multizone-ladder`, `app.js.before-multizone-ladder`,
+`index.html.before-multizone-ladder`, and `styles.css.before-multizone-ladder` are
+the versions from right before this feature. To revert:
+
+```bash
+cp backups/analysis.js.before-multizone-ladder netlify/functions/lib/analysis.js
+cp backups/app.js.before-multizone-ladder public/app.js
+cp backups/index.html.before-multizone-ladder public/index.html
+cp backups/styles.css.before-multizone-ladder public/styles.css
+git add . && git commit -m "Revert multi-zone ladder" && git push
+```
+
 ## Rolling back the cross-timeframe golden-zone scoring change
 
 `backups/analysis.js.before-cross-timeframe-context` is the exact version of

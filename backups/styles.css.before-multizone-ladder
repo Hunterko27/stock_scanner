@@ -332,42 +332,6 @@ main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 60px; }
 
 .card-status { color: var(--text-dim); font-size: 0.85rem; padding: 20px 0; text-align: center; }
 
-.ladder-section { margin: 10px 0; }
-
-.ladder-title {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  font-weight: 600;
-  margin: 10px 0 4px;
-}
-.ladder-title.resistance { color: var(--brick); }
-.ladder-title.support { color: var(--sage); }
-
-.ladder-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  margin-bottom: 2px;
-}
-.ladder-row.resistance { background: rgba(194, 91, 82, 0.08); }
-.ladder-row.support { background: rgba(95, 163, 126, 0.08); }
-
-.ladder-price {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--text);
-}
-.ladder-row.resistance .ladder-price { color: var(--brick); }
-.ladder-row.support .ladder-price { color: var(--sage); }
-
-.ladder-label { color: var(--text-dim); font-size: 0.72rem; text-align: right; }
-
-.ladder-empty { color: var(--text-dim); font-size: 0.75rem; font-style: italic; padding: 2px 8px; }
-
 /* ---------- Footer ---------- */
 .app-footer {
   max-width: 1160px;
