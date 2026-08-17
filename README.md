@@ -144,6 +144,37 @@ Keep in mind the free tier's daily cap (800 requests = ~400 full stock scans/day
 personal use, checking the app a handful of times a day with a reasonable watchlist size
 comfortably fits within that.
 
+## Rolling back the long-range major zones feature
+
+Each daily/weekly timeframe panel now also shows a **second, separate** ladder —
+"Major support/resistance (long-term)" — built differently from the short-term one
+above it. Instead of the most recent 60-90 bars, it scans as much history as we have
+(up to ~3 years of daily, ~5 years of weekly) for pivot highs/lows, clusters ones that
+land within 2% of each other, and ranks by how many times that price area was actually
+retested (2+ touches minimum to count as "major"). This is meant to catch things like
+a stock's real long-standing support/resistance zone that a short window would miss —
+e.g. a level that's held 4 separate times over 18 months. A "Fib golden zone
+(long-term)" row was also added, using the same long-range window instead of the
+existing short-term Fibonacci calculation, so you can compare both. 4H has no
+long-range pass — only ~200 days are fetched for it, not enough history for "major"
+to mean anything.
+
+Worth knowing: with real market data, expect touch counts in the low single digits
+(2-6 is typical) — a level tested 50+ times would be unusual and likely means the
+price has been unusually range-bound for an extended period, not a bug.
+
+`backups/analysis.js.before-major-zones`, `app.js.before-major-zones`,
+`index.html.before-major-zones`, and `styles.css.before-major-zones` are the versions
+from right before this feature. To revert:
+
+```bash
+cp backups/analysis.js.before-major-zones netlify/functions/lib/analysis.js
+cp backups/app.js.before-major-zones public/app.js
+cp backups/index.html.before-major-zones public/index.html
+cp backups/styles.css.before-major-zones public/styles.css
+git add . && git commit -m "Revert long-range major zones" && git push
+```
+
 ## Rolling back the multi-zone support/resistance ladder
 
 Each timeframe panel now shows up to 4 support levels (below current price) and 4

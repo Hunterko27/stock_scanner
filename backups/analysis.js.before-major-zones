@@ -390,57 +390,7 @@ function fibZoneContextNote(direction, higherTrendBullish) {
     : ' — higher timeframe confirms the downtrend, bounce more likely to fail';
 }
 
-// ---------- Long-range "major zone" detection ----------
-//
-// The regular ladder (buildLevelLadder) and Fibonacci zone are both built
-// from a short, recent window — good for near-term entry timing, but blind
-// to zones that only become "major" because price has tested them
-// repeatedly over a much longer history. This scans as much history as
-// we've got for pivot highs/lows, clusters ones that land within a small
-// percentage of each other, and ranks by how many times that price area
-// was actually retested — closer to how a trader would eyeball "this has
-// acted as support four separate times" rather than just "this is close."
-function buildMajorLevels(candles, price) {
-  const closes = candles.map((c) => c.close);
-  const pivots = findPivots(closes, 3);
-  if (pivots.length < 2) return { support: [], resistance: [] };
-
-  const CLUSTER_TOLERANCE_PCT = 0.02; // pivots within 2% of each other count as the same zone
-  const sorted = [...pivots].sort((a, b) => a.value - b.value);
-  const clusters = [];
-
-  sorted.forEach((p) => {
-    const existing = clusters.find((c) => Math.abs(p.value - c.avgPrice) / c.avgPrice <= CLUSTER_TOLERANCE_PCT);
-    if (existing) {
-      existing.touches.push(p);
-      existing.avgPrice = existing.touches.reduce((s, t) => s + t.value, 0) / existing.touches.length;
-    } else {
-      clusters.push({ avgPrice: p.value, touches: [p] });
-    }
-  });
-
-  // Only clusters genuinely retested (2+ touches) count as "major" — a
-  // single pivot is just a swing point, not a proven zone.
-  const significant = clusters
-    .filter((c) => c.touches.length >= 2)
-    .map((c) => ({
-      price: Number(c.avgPrice.toFixed(2)),
-      touchCount: c.touches.length,
-      label: `Major level (${c.touches.length} touches)`,
-    }));
-
-  const rankAndPick = (list) =>
-    list
-      .sort((a, b) => b.touchCount - a.touchCount || Math.abs(a.price - price) - Math.abs(b.price - price))
-      .slice(0, 3);
-
-  return {
-    support: rankAndPick(significant.filter((l) => l.price < price)),
-    resistance: rankAndPick(significant.filter((l) => l.price > price)),
-  };
-}
-
-function analyzeTimeframe(candles, fibLookback, useLog = false, higherTrendBullish = null, longRangeLookback = null) {
+function analyzeTimeframe(candles, fibLookback, useLog = false, higherTrendBullish = null) {
   const closes = candles.map((c) => c.close);
   if (closes.length < 30) {
     return { insufficientData: true };
@@ -463,15 +413,6 @@ function analyzeTimeframe(candles, fibLookback, useLog = false, higherTrendBulli
   const divergence = rsiValues.length >= 20 ? detectDivergence(closes, rsiValues, fibLookback) : null;
   const volumeTrend = computeVolumeTrend(candles);
   const levels = buildLevelLadder(candles, price, bb, sma20, sma50, sma200, fibLookback, useLog);
-
-  // Long-range structure: a separate pass over much more history than the
-  // short-window fib/ladder above, aimed at surfacing genuinely major zones
-  // (tested repeatedly over months/years) rather than just the most recent
-  // swing. Only computed when a longer lookback is actually available and
-  // requested — 4H doesn't have enough history fetched for this to be
-  // meaningful, so it's skipped there (longRangeLookback stays null).
-  const longRangeFib = longRangeLookback ? computeFibZone(candles, longRangeLookback, useLog) : null;
-  const majorLevels = longRangeLookback ? buildMajorLevels(candles, price) : null;
 
   // ---- Component scoring (each contributes to a 0-100 opportunity score) ----
   let score = 50; // neutral baseline
@@ -574,8 +515,6 @@ function analyzeTimeframe(candles, fibLookback, useLog = false, higherTrendBulli
     divergence,
     volumeTrend,
     levels,
-    longRangeFib,
-    majorLevels,
     score,
     label,
     signals,
@@ -692,10 +631,7 @@ async function analyzeSymbol(symbol) {
   // Its simple MA trend direction (20 vs 50) then gets passed down to 4H
   // and daily, so a bounce/pullback zone on those timeframes can be scored
   // in light of the bigger picture rather than in isolation.
-  // Long-range lookback: as much history as we reasonably have, capped so
-  // we're not reaching back into potentially-irrelevant old price regimes
-  // (~5 years of weekly, ~3 years of daily).
-  const tf1w = analyzeTimeframe(weekly, 60, true, null, Math.min(weekly.length, 260));
+  const tf1w = analyzeTimeframe(weekly, 60, true);
   const weeklyTrendBullish = !tf1w.insufficientData && tf1w.sma20 != null && tf1w.sma50 != null
     ? tf1w.sma20 > tf1w.sma50
     : null;
@@ -703,10 +639,8 @@ async function analyzeSymbol(symbol) {
   // Log-scale retracements for daily/weekly, where large percentage moves
   // are common and log scale tends to track historical reactions better.
   // 4H stays linear — short-term moves rarely differ much between the two.
-  // 4H has no long-range pass — only ~200 days are fetched for it, not
-  // enough history for "major" zones to mean anything.
   const tf4h = analyzeTimeframe(fourHour, 60, false, weeklyTrendBullish);
-  const tf1d = analyzeTimeframe(daily, 90, true, weeklyTrendBullish, Math.min(daily.length, 750));
+  const tf1d = analyzeTimeframe(daily, 90, true, weeklyTrendBullish);
 
   // Weighted overall score: weekly = trend context, daily = intermediate, 4h = entry timing
   const weights = { w: 0.4, d: 0.35, h: 0.25 };

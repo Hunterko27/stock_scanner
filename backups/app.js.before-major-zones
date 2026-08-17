@@ -203,45 +203,19 @@ function renderLevelLadder(tf) {
   `;
 }
 
-// Major zones use much more history and rank by how many times a price
-// area was actually retested, rather than just proximity — deliberately
-// styled distinctly (a "major" badge on each row) so it reads as a
-// different, longer-term kind of signal than the short-term ladder above.
-function renderMajorLevels(tf) {
-  if (!tf.majorLevels) return '';
-  const renderRows = (list, cls) =>
-    list.length
-      ? list.map((l) => `<div class="ladder-row major ${cls}"><span class="ladder-price">$${l.price}</span><span class="ladder-label">${l.touchCount}\u00d7 tested</span></div>`).join('')
-      : '<div class="ladder-empty">No repeatedly-tested zone found nearby</div>';
-
-  return `
-    <div class="ladder-section major-section">
-      <div class="ladder-title resistance">Major resistance (long-term)</div>
-      ${renderRows(tf.majorLevels.resistance, 'resistance')}
-      <div class="ladder-title support">Major support (long-term)</div>
-      ${renderRows(tf.majorLevels.support, 'support')}
-    </div>
-  `;
-}
-
 function renderTimeframePanel(panelEl, tf) {
   if (!tf || tf.insufficientData) {
     panelEl.innerHTML = '<div class="card-status">Not enough history yet for this timeframe.</div>';
     return;
   }
-  const longRangeRow = tf.longRangeFib
-    ? `<div class="metric-row"><span>Fib golden zone (long-term)</span><span>$${tf.longRangeFib.goldenLow.toFixed(2)} – $${tf.longRangeFib.goldenHigh.toFixed(2)}</span></div>`
-    : '';
   panelEl.innerHTML = `
     <div class="metric-row"><span>Price</span><span>$${tf.price}</span></div>
     <div class="metric-row"><span>RSI (14)</span><span>${tf.rsi ?? '—'}</span></div>
     <div class="metric-row"><span>Bollinger</span><span>${tf.bollinger ? `${tf.bollinger.lower} – ${tf.bollinger.upper}` : '—'}</span></div>
     <div class="metric-row"><span>SMA20 / SMA50 / SMA200</span><span>${tf.sma20 ?? '—'} / ${tf.sma50 ?? '—'} / ${tf.sma200 ?? '—'}</span></div>
     <div class="metric-row"><span>Fib golden zone${tf.fib && tf.fib.useLog ? ' (log)' : ''}</span><span>${tf.fib ? `$${tf.fib.goldenLow.toFixed(2)} – $${tf.fib.goldenHigh.toFixed(2)}` : '—'}</span></div>
-    ${longRangeRow}
     <div class="metric-row"><span>Extension targets</span><span>${tf.fib && tf.fib.extensions ? formatExtensions(tf.fib) : '—'}</span></div>
     ${renderLevelLadder(tf)}
-    ${renderMajorLevels(tf)}
     <div class="signal-chips"></div>
   `;
   renderSignalChips(el('.signal-chips', panelEl), tf.signals);

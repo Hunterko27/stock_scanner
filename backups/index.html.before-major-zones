@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Confluence — Opportunity Scanner</title>
+<meta name="theme-color" content="#0B0E14" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2242%22 fill=%22none%22 stroke=%22%23D4A94D%22 stroke-width=%2210%22/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark" aria-hidden="true"></span>
+    <span class="brand-name">Confluence</span>
+  </div>
+  <form id="add-form" class="add-form">
+    <input id="add-symbol" type="text" placeholder="Add ticker (e.g. TSLA or BTC/USD)" autocomplete="off" autocapitalize="characters" />
+    <select id="add-target">
+      <option value="watchlist">My Watchlist</option>
+      <option value="scanlist">Scan List</option>
+    </select>
+    <button type="submit">Add</button>
+  </form>
+  <button id="refresh-all" class="ghost-btn" title="Rescan everything">↻ Rescan</button>
+</header>
+
+<div id="error-banner" class="error-banner" hidden></div>
+
+<main id="app">
+  <section class="section">
+    <div class="section-head">
+      <h2>My Watchlist</h2>
+      <p class="section-sub">Stocks you're personally tracking.</p>
+    </div>
+    <div id="watchlist-grid" class="card-grid"></div>
+    <p id="watchlist-empty" class="empty-note" hidden>No stocks yet — add one above.</p>
+  </section>
+
+  <section class="section">
+    <div class="section-head">
+      <h2>Scan List <span class="section-tag">auto-ranked</span></h2>
+      <p class="section-sub">Curated stocks scanned every time you open the app, sorted by opportunity score so you don't miss a setup.</p>
+    </div>
+    <div id="scanlist-grid" class="card-grid"></div>
+    <p id="scanlist-empty" class="empty-note" hidden>No stocks in your scan list yet — add one above.</p>
+  </section>
+</main>
+
+<footer class="app-footer">
+  <p>Technical-analysis screening tool for personal use — not financial advice. Signals are derived from RSI, Bollinger Bands, moving averages, and Fibonacci retracement across 4H / 1D / 1W timeframes.</p>
+  <p>Data comes from Twelve Data's free tier, which allows a limited number of requests per minute — stocks load a few at a time rather than all at once, so cards may take a moment to fill in.</p>
+</footer>
+
+<template id="card-template">
+  <article class="stock-card" data-symbol="">
+    <div class="card-top">
+      <div class="dial-wrap">
+        <svg class="dial" viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="dial-track" cx="60" cy="60" r="50"></circle>
+          <circle class="dial-arc" cx="60" cy="60" r="50"></circle>
+        </svg>
+        <div class="dial-score">--</div>
+      </div>
+      <div class="card-id">
+        <div class="ticker-row">
+          <span class="ticker"></span>
+          <button class="remove-btn" title="Remove">×</button>
+        </div>
+        <div class="price"></div>
+        <div class="overall-label"></div>
+      </div>
+    </div>
+    <div class="guidance-box"></div>
+    <div class="sparkline-wrap"><canvas class="sparkline"></canvas></div>
+    <div class="tf-tabs" role="tablist"></div>
+    <div class="tf-panel"></div>
+    <div class="earnings-row">
+      <button class="earnings-btn">Check earnings date</button>
+      <span class="earnings-note">may use extra API credits</span>
+    </div>
+    <div class="earnings-result"></div>
+    <div class="earnings-row">
+      <button class="pe-btn">Check P/E ratio</button>
+      <span class="earnings-note">via Yahoo Finance — can occasionally fail</span>
+    </div>
+    <div class="pe-result"></div>
+  </article>
+</template>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

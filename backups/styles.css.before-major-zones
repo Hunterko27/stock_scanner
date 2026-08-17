@@ -368,20 +368,6 @@ main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 60px; }
 
 .ladder-empty { color: var(--text-dim); font-size: 0.75rem; font-style: italic; padding: 2px 8px; }
 
-.major-section {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--border);
-}
-
-.ladder-row.major {
-  border: 1px solid transparent;
-  font-weight: 500;
-}
-.ladder-row.major.resistance { border-color: rgba(194, 91, 82, 0.35); }
-.ladder-row.major.support { border-color: rgba(95, 163, 126, 0.35); }
-.ladder-row.major .ladder-label { font-weight: 600; }
-
 /* ---------- Footer ---------- */
 .app-footer {
   max-width: 1160px;
