@@ -151,21 +151,32 @@ Each daily/weekly timeframe panel now also shows a **second, separate** ladder �
 above it. Instead of the most recent 60-90 bars, it scans as much history as we have
 (up to ~3 years of daily, ~5 years of weekly) for pivot highs/lows, clusters ones that
 land within 2% of each other, and ranks by how many times that price area was actually
-retested (2+ touches minimum to count as "major"). This is meant to catch things like
-a stock's real long-standing support/resistance zone that a short window would miss —
-e.g. a level that's held 4 separate times over 18 months. A "Fib golden zone
-(long-term)" row was also added, using the same long-range window instead of the
-existing short-term Fibonacci calculation, so you can compare both. 4H has no
-long-range pass — only ~200 days are fetched for it, not enough history for "major"
-to mean anything.
+retested. A "Fib golden zone (long-term)" row was also added, using the same
+long-range window instead of the existing short-term Fibonacci calculation, so you can
+compare both. 4H has no long-range pass — only ~200 days are fetched for it, not
+enough history for "major" to mean anything.
 
-Worth knowing: with real market data, expect touch counts in the low single digits
-(2-6 is typical) — a level tested 50+ times would be unusual and likely means the
-price has been unusually range-bound for an extended period, not a bug.
+A touch only counts as a genuinely separate test of a level if **both** of these hold:
+1. Price actually departed the zone (moved at least 2.5× the cluster tolerance away)
+   and came back, rather than just producing another nearby pivot a few bars later —
+   otherwise a single choppy stretch can look like many independent tests.
+2. The touches span at least 15% of the total lookback window — otherwise a handful of
+   genuine oscillations packed into one short early period (e.g. 8 touches in 60 days,
+   out of a 750-day window) can outrank a level that's actually proven itself over a
+   much longer, more relevant stretch of time.
+
+Both conditions were added after testing against a synthetic case that reproduced a
+real issue: an early, tight consolidation period was surfacing as a "21× tested" major
+level despite being a single short-lived event, decades of price action and hundreds
+of dollars away from current price. Confirmed fixed — that same scenario now correctly
+returns no major level — while a genuine multi-month oscillation pattern (the kind an
+actual repeatedly-defended support/resistance zone looks like) still correctly shows up.
 
 `backups/analysis.js.before-major-zones`, `app.js.before-major-zones`,
 `index.html.before-major-zones`, and `styles.css.before-major-zones` are the versions
-from right before this feature. To revert:
+from right before this whole feature existed — still the right rollback target if
+needed (there's no separate backup for the specific version with the touch-counting
+bug, since that version was actively wrong, not a worthwhile revert target). To revert:
 
 ```bash
 cp backups/analysis.js.before-major-zones netlify/functions/lib/analysis.js
