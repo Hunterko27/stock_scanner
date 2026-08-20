@@ -168,9 +168,25 @@ A touch only counts as a genuinely separate test of a level if **both** of these
 Both conditions were added after testing against a synthetic case that reproduced a
 real issue: an early, tight consolidation period was surfacing as a "21× tested" major
 level despite being a single short-lived event, decades of price action and hundreds
-of dollars away from current price. Confirmed fixed — that same scenario now correctly
-returns no major level — while a genuine multi-month oscillation pattern (the kind an
-actual repeatedly-defended support/resistance zone looks like) still correctly shows up.
+of dollars away from current price. That fix worked for a short, isolated
+consolidation, but real testing against META surfaced a **second, deeper issue**: even
+with those two conditions, a long, noisy multi-year decline-then-recovery (like META's
+actual 2021-2024 history) could still produce inflated counts (9, 7, 6 touches),
+because grinding sideways *through* a price band during one long trending move can
+satisfy both the "departed and returned" and "spans enough time" checks without
+representing genuinely separate visits months apart.
+
+The fix that actually resolved this replaced pivot-clustering-based counting entirely
+with a **price-crossing state machine**: for each candidate price zone, walk the full
+close series in time order and only count a touch when price was clearly away from the
+zone (beyond a buffer) for a meaningful stretch (~10 bars, roughly 2 weeks of daily
+data), then genuinely re-entered. This is a fundamentally more direct measurement of
+"how many separate times did price actually come back to this level" than trying to
+infer it from where pivots happened to land. Retested against all three scenarios
+together: the short consolidation still correctly returns nothing, the noisy
+long-grind META-like case now returns realistic low counts (2× each) instead of the
+inflated 9/7/6, and the genuine multi-month oscillation pattern still correctly shows
+~4 touches on each side.
 
 `backups/analysis.js.before-major-zones`, `app.js.before-major-zones`,
 `index.html.before-major-zones`, and `styles.css.before-major-zones` are the versions

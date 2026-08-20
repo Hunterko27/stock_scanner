@@ -400,65 +400,72 @@ function fibZoneContextNote(direction, higherTrendBullish) {
 // percentage of each other, and ranks by how many times that price area
 // was actually retested — closer to how a trader would eyeball "this has
 // acted as support four separate times" rather than just "this is close."
+// Counts genuine, separate tests of a price zone by walking the full close
+// series in time order with a simple state machine, rather than inferring
+// touches from individual pivot detections. A touch only counts when price
+// was clearly away from the zone (beyond a buffer) for a meaningful
+// stretch, then actually re-entered — this is what pivot-clustering alone
+// couldn't distinguish: grinding sideways *through* a price band during
+// one long decline or rally will produce many pivots and even satisfy a
+// simple "departed and returned" check, without representing genuinely
+// separate visits to that level months apart.
+function countZoneCrossings(closes, zoneLow, zoneHigh, minBarsOutside) {
+  const width = zoneHigh - zoneLow;
+  const bufferLow = zoneLow - width * 1.5;
+  const bufferHigh = zoneHigh + width * 1.5;
+
+  let wasOutside = false;
+  let barsOutside = 0;
+  let crossings = 0;
+
+  for (const c of closes) {
+    const clearlyOutside = c < bufferLow || c > bufferHigh;
+    const inside = c >= zoneLow && c <= zoneHigh;
+
+    if (clearlyOutside) {
+      barsOutside += 1;
+      wasOutside = wasOutside || barsOutside >= minBarsOutside;
+    } else if (inside) {
+      if (wasOutside) crossings += 1;
+      wasOutside = false;
+      barsOutside = 0;
+    }
+    // in the buffer but not clearly outside or inside: state carries over
+  }
+
+  return crossings;
+}
+
 function buildMajorLevels(candles, price) {
   const closes = candles.map((c) => c.close);
   const pivots = findPivots(closes, 3);
   if (pivots.length < 2) return { support: [], resistance: [] };
 
-  const CLUSTER_TOLERANCE_PCT = 0.02; // pivots within 2% of each other count as the same zone
+  const CLUSTER_TOLERANCE_PCT = 0.02; // pivots within 2% of each other count as the same candidate zone
+  const MIN_BARS_OUTSIDE = 10; // ~2 weeks of daily data clearly away before a re-entry counts as separate
 
-  // A level only counts as separately "tested" if price genuinely departed
-  // the zone and came back — not just because another pivot was detected
-  // some bars later. A single extended sideways consolidation can produce
-  // many pivots a few bars apart without price ever truly leaving the
-  // area, which would otherwise inflate one continuous period into a
-  // dozen+ fake "touches." Requiring a real round trip (price moving at
-  // least a few multiples of the cluster tolerance away, then returning)
-  // collapses that into the one visit it actually was, while still
-  // correctly counting genuinely separate revisits weeks or months apart.
-  const DEPARTURE_MULTIPLIER = 2.5;
-
+  // Group pivots into candidate zones purely to find plausible price
+  // levels to test — the actual touch count comes from countZoneCrossings
+  // below, not from how many pivots landed in each group.
   const sorted = [...pivots].sort((a, b) => a.value - b.value);
   const clusters = [];
-
   sorted.forEach((p) => {
     const existing = clusters.find((c) => Math.abs(p.value - c.avgPrice) / c.avgPrice <= CLUSTER_TOLERANCE_PCT);
     if (existing) {
-      const departureThreshold = existing.avgPrice * CLUSTER_TOLERANCE_PCT * DEPARTURE_MULTIPLIER;
-      const lastTouchIndex = Math.max(...existing.touches.map((t) => t.index));
-      const start = Math.min(lastTouchIndex, p.index);
-      const end = Math.max(lastTouchIndex, p.index) + 1;
-      const departed = closes.slice(start, end).some((c) => Math.abs(c - existing.avgPrice) >= departureThreshold);
-      if (!departed) return; // price never really left this zone since the last count — same visit, skip
-
-      existing.touches.push(p);
-      existing.avgPrice = existing.touches.reduce((s, t) => s + t.value, 0) / existing.touches.length;
+      existing.members.push(p.value);
+      existing.avgPrice = existing.members.reduce((s, v) => s + v, 0) / existing.members.length;
     } else {
-      clusters.push({ avgPrice: p.value, touches: [p] });
+      clusters.push({ avgPrice: p.value, members: [p.value] });
     }
   });
 
-  // Only clusters genuinely retested (2+ touches) count as "major" — a
-  // single pivot is just a swing point, not a proven zone. On top of that,
-  // the touches need to span a meaningful chunk of the total window — a
-  // level tested 8 times within one tight 60-day consolidation isn't the
-  // same thing as one that's held up across 18 months, even though the
-  // departure check above confirms both are "genuine" touches. Without
-  // this, a short early choppy period can outrank a level that's actually
-  // proven itself over a much longer, more relevant stretch of time.
-  const minSpanBars = Math.round(closes.length * 0.15);
-
   const significant = clusters
-    .filter((c) => c.touches.length >= 2)
-    .filter((c) => {
-      const indices = c.touches.map((t) => t.index);
-      return Math.max(...indices) - Math.min(...indices) >= minSpanBars;
+    .map((c) => {
+      const width = c.avgPrice * CLUSTER_TOLERANCE_PCT;
+      const touchCount = countZoneCrossings(closes, c.avgPrice - width, c.avgPrice + width, MIN_BARS_OUTSIDE);
+      return { price: Number(c.avgPrice.toFixed(2)), touchCount, label: `Major level (${touchCount} touches)` };
     })
-    .map((c) => ({
-      price: Number(c.avgPrice.toFixed(2)),
-      touchCount: c.touches.length,
-      label: `Major level (${c.touches.length} touches)`,
-    }));
+    .filter((c) => c.touchCount >= 2);
 
   const rankAndPick = (list) =>
     list
