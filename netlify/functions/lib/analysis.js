@@ -417,8 +417,10 @@ function countZoneCrossings(closes, zoneLow, zoneHigh, minBarsOutside) {
   let wasOutside = false;
   let barsOutside = 0;
   let crossings = 0;
+  let firstIndex = null;
+  let lastIndex = null;
 
-  for (const c of closes) {
+  closes.forEach((c, i) => {
     const clearlyOutside = c < bufferLow || c > bufferHigh;
     const inside = c >= zoneLow && c <= zoneHigh;
 
@@ -426,14 +428,18 @@ function countZoneCrossings(closes, zoneLow, zoneHigh, minBarsOutside) {
       barsOutside += 1;
       wasOutside = wasOutside || barsOutside >= minBarsOutside;
     } else if (inside) {
-      if (wasOutside) crossings += 1;
+      if (wasOutside) {
+        crossings += 1;
+        if (firstIndex == null) firstIndex = i;
+        lastIndex = i;
+      }
       wasOutside = false;
       barsOutside = 0;
     }
     // in the buffer but not clearly outside or inside: state carries over
-  }
+  });
 
-  return crossings;
+  return { crossings, firstIndex, lastIndex };
 }
 
 function buildMajorLevels(candles, price) {
@@ -442,7 +448,23 @@ function buildMajorLevels(candles, price) {
   if (pivots.length < 2) return { support: [], resistance: [] };
 
   const CLUSTER_TOLERANCE_PCT = 0.02; // pivots within 2% of each other count as the same candidate zone
-  const MIN_BARS_OUTSIDE = 10; // ~2 weeks of daily data clearly away before a re-entry counts as separate
+  const MIN_BARS_OUTSIDE = 15; // ~3 weeks of daily data clearly away before a re-entry counts as separate
+
+  // A level's touches also need to spread across a meaningful chunk of the
+  // total window, not just cluster within one multi-month volatile period
+  // (e.g. the choppy re-basing right after a crash) — otherwise several
+  // genuinely-separate-by-3-weeks crossings can still all belong to the
+  // same short episode rather than representing a level that's proven
+  // itself over a long stretch of time.
+  const minSpanBars = Math.round(closes.length * 0.2);
+
+  // Old levels from far earlier in a stock's history, before a huge
+  // subsequent move, are technically real but not practically useful for
+  // "should I act around current price" — cap how far away a level can be
+  // and still get surfaced. A stock that's up several multiples since any
+  // repeatedly-tested level existed will correctly show nothing here
+  // rather than a stale, distant number.
+  const MAX_DISTANCE_PCT = 0.4;
 
   // Group pivots into candidate zones purely to find plausible price
   // levels to test — the actual touch count comes from countZoneCrossings
@@ -460,12 +482,14 @@ function buildMajorLevels(candles, price) {
   });
 
   const significant = clusters
+    .filter((c) => Math.abs(c.avgPrice - price) / price <= MAX_DISTANCE_PCT)
     .map((c) => {
       const width = c.avgPrice * CLUSTER_TOLERANCE_PCT;
-      const touchCount = countZoneCrossings(closes, c.avgPrice - width, c.avgPrice + width, MIN_BARS_OUTSIDE);
-      return { price: Number(c.avgPrice.toFixed(2)), touchCount, label: `Major level (${touchCount} touches)` };
+      const { crossings, firstIndex, lastIndex } = countZoneCrossings(closes, c.avgPrice - width, c.avgPrice + width, MIN_BARS_OUTSIDE);
+      const span = firstIndex != null ? lastIndex - firstIndex : 0;
+      return { price: Number(c.avgPrice.toFixed(2)), touchCount: crossings, span, label: `Major level (${crossings} touches)` };
     })
-    .filter((c) => c.touchCount >= 2);
+    .filter((c) => c.touchCount >= 2 && c.span >= minSpanBars);
 
   const rankAndPick = (list) =>
     list

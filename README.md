@@ -188,6 +188,25 @@ long-grind META-like case now returns realistic low counts (2× each) instead of
 inflated 9/7/6, and the genuine multi-month oscillation pattern still correctly shows
 ~4 touches on each side.
 
+Real-world testing against AMAT and META surfaced **two more issues** on top of that:
+support levels 60-90% below current price with double-digit touch counts (e.g. $50 for
+a stock at $496). Two causes, both fixed:
+1. Touches genuinely 3+ weeks apart can still all cluster within one relatively short
+   (few-month) volatile period — like the choppy re-basing right after a crash — rather
+   than being spread across a level's whole history. Added a **minimum span
+   requirement**: touches must spread across at least 20% of the total lookback window
+   to count as a proven long-term level, not just a busy few months.
+2. Even a genuinely, repeatedly-tested old level isn't practically useful if a stock
+   has moved several multiples away from it since. Added a **maximum distance cap**
+   (40% from current price) — a level further away than that simply isn't surfaced,
+   rather than showing something technically real but not actionable.
+
+Worth knowing: with this cap in place, many stocks — especially ones that have run up
+or down a lot from any historically-significant level — will now often show **no**
+major zones on one or both sides. That's the intended, honest outcome (nothing nearby
+qualifies) rather than a bug; the short-term ladder above it still always has
+Bollinger/MA/Fibonacci-based levels regardless.
+
 `backups/analysis.js.before-major-zones`, `app.js.before-major-zones`,
 `index.html.before-major-zones`, and `styles.css.before-major-zones` are the versions
 from right before this whole feature existed — still the right rollback target if
