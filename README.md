@@ -207,6 +207,28 @@ major zones on one or both sides. That's the intended, honest outcome (nothing n
 qualifies) rather than a bug; the short-term ladder above it still always has
 Bollinger/MA/Fibonacci-based levels regardless.
 
+**A fourth round, prompted by testing GOOG**: a smoothly, steadily trending stock (less
+back-and-forth than META's choppy post-crash recovery) genuinely produced *zero*
+levels near current price meeting the "2+ genuine crossings" bar — not because of a
+bug, but because a steady climb naturally creates fewer repeated revisits of the same
+price band than a more volatile stock does. Diagnostic testing confirmed every
+candidate within 40% of price had exactly 1 crossing, while the only 2+-crossing
+candidates were 70%+ away (correctly excluded by the distance cap). Shortening the
+lookback window (the initially-proposed fix) was tested and confirmed **not** to help,
+since the bottleneck was touch count, not span.
+
+The actual fix: a **two-tier system**. The strict "Major level" bar (2+ genuine
+crossings, spread across 20%+ of the window) stays the primary, preferred result
+whenever anything clears it — confirmed still working correctly on the SOFI-style
+genuine-oscillation test. When nothing does, it falls back to showing the nearest
+single genuine test as a **"Notable level (tested once)"** — same price-crossing logic,
+just without requiring a second visit. The frontend styles this fallback tier visibly
+dimmer (dashed border, lighter text) so a single test is never visually confused with a
+level that's actually proven itself multiple times. Retested against all four
+scenarios together (GOOG-like smooth climb, META-like volatile recovery, the original
+short-consolidation bug, and the genuine SOFI-style oscillation) to confirm each now
+gets the right tier.
+
 `backups/analysis.js.before-major-zones`, `app.js.before-major-zones`,
 `index.html.before-major-zones`, and `styles.css.before-major-zones` are the versions
 from right before this whole feature existed — still the right rollback target if

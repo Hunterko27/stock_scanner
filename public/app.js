@@ -207,11 +207,18 @@ function renderLevelLadder(tf) {
 // area was actually retested, rather than just proximity — deliberately
 // styled distinctly (a "major" badge on each row) so it reads as a
 // different, longer-term kind of signal than the short-term ladder above.
+// Two confidence tiers: a genuinely proven "Major level" (2+ real
+// departures-and-returns spread across a long stretch of time) is styled
+// bold; a single clean test falls back to a dimmer "Notable level" so it's
+// never visually confused with the stronger, repeatedly-confirmed kind.
 function renderMajorLevels(tf) {
   if (!tf.majorLevels) return '';
   const renderRows = (list, cls) =>
     list.length
-      ? list.map((l) => `<div class="ladder-row major ${cls}"><span class="ladder-price">$${l.price}</span><span class="ladder-label">${l.touchCount}\u00d7 tested</span></div>`).join('')
+      ? list.map((l) => {
+          const confidence = l.touchCount >= 2 ? 'confirmed' : 'notable';
+          return `<div class="ladder-row major ${cls} ${confidence}"><span class="ladder-price">$${l.price}</span><span class="ladder-label">${l.label}</span></div>`;
+        }).join('')
       : '<div class="ladder-empty">No repeatedly-tested zone found nearby</div>';
 
   return `

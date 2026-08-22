@@ -382,6 +382,14 @@ main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 60px; }
 .ladder-row.major.support { border-color: rgba(95, 163, 126, 0.35); }
 .ladder-row.major .ladder-label { font-weight: 600; }
 
+.ladder-row.major.notable {
+  border-style: dashed;
+  opacity: 0.7;
+}
+.ladder-row.major.notable.resistance { border-color: rgba(194, 91, 82, 0.2); }
+.ladder-row.major.notable.support { border-color: rgba(95, 163, 126, 0.2); }
+.ladder-row.major.notable .ladder-label { font-weight: 400; font-style: italic; }
+
 /* ---------- Footer ---------- */
 .app-footer {
   max-width: 1160px;

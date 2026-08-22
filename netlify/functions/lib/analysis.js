@@ -481,24 +481,48 @@ function buildMajorLevels(candles, price) {
     }
   });
 
-  const significant = clusters
+  const candidates = clusters
     .filter((c) => Math.abs(c.avgPrice - price) / price <= MAX_DISTANCE_PCT)
     .map((c) => {
       const width = c.avgPrice * CLUSTER_TOLERANCE_PCT;
       const { crossings, firstIndex, lastIndex } = countZoneCrossings(closes, c.avgPrice - width, c.avgPrice + width, MIN_BARS_OUTSIDE);
       const span = firstIndex != null ? lastIndex - firstIndex : 0;
-      return { price: Number(c.avgPrice.toFixed(2)), touchCount: crossings, span, label: `Major level (${crossings} touches)` };
+      return { price: Number(c.avgPrice.toFixed(2)), touchCount: crossings, span };
     })
-    .filter((c) => c.touchCount >= 2 && c.span >= minSpanBars);
+    .filter((c) => c.touchCount >= 1);
 
-  const rankAndPick = (list) =>
-    list
-      .sort((a, b) => b.touchCount - a.touchCount || Math.abs(a.price - price) - Math.abs(b.price - price))
+  // "Confirmed" tier: genuinely proven — retested 2+ times, spread across
+  // a meaningful chunk of the window. This is the strict, high-confidence
+  // bar and stays the default whenever anything clears it.
+  const confirmed = candidates
+    .filter((c) => c.touchCount >= 2 && c.span >= minSpanBars)
+    .map((c) => ({ ...c, label: `Major level (${c.touchCount} touches)` }));
+
+  // Fallback "notable" tier: a single clean, genuine test (price clearly
+  // departed and came back once). Only used when nothing meets the
+  // stricter bar above — a smoothly, steadily trending stock (like a
+  // steady multi-year climb without much back-and-forth) genuinely has
+  // fewer repeated revisits than a choppier one, and would otherwise show
+  // nothing here at all. Labeled distinctly so the lower confidence is
+  // never confused with a level that's actually proven itself repeatedly.
+  const notable = candidates
+    .filter((c) => c.touchCount === 1)
+    .map((c) => ({ ...c, label: 'Notable level (tested once)' }));
+
+  const rankAndPick = (confirmedList, notableList) => {
+    if (confirmedList.length) {
+      return confirmedList
+        .sort((a, b) => b.touchCount - a.touchCount || Math.abs(a.price - price) - Math.abs(b.price - price))
+        .slice(0, 3);
+    }
+    return notableList
+      .sort((a, b) => Math.abs(a.price - price) - Math.abs(b.price - price))
       .slice(0, 3);
+  };
 
   return {
-    support: rankAndPick(significant.filter((l) => l.price < price)),
-    resistance: rankAndPick(significant.filter((l) => l.price > price)),
+    support: rankAndPick(confirmed.filter((l) => l.price < price), notable.filter((l) => l.price < price)),
+    resistance: rankAndPick(confirmed.filter((l) => l.price > price), notable.filter((l) => l.price > price)),
   };
 }
 
