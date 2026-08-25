@@ -694,7 +694,7 @@ function buildGuidance(tf4h, tf1d, tf1w) {
     Math.abs(c.tf.score - 50) > Math.abs(best.tf.score - 50) ? c : best
   );
 
-  const { rsi, fib, sma20, bollinger, score, label } = lead.tf;
+  const { rsi, fib, sma20, bollinger, score, label, signals } = lead.tf;
 
   const invalidation = fib ? fmt(fib.swingLow) : null;
   const invalidationNote = invalidation
@@ -733,7 +733,18 @@ function buildGuidance(tf4h, tf1d, tf1w) {
   } else if (rsi != null && rsi < 30) {
     core = `RSI is oversold at ${rsi}, suggesting the recent decline may be stretched. There's no clear golden zone nearby to confirm a bounce level here, so watch for a stabilization signal — RSI turning back up, a reversal candle — rather than assuming the drop is already done.`;
   } else if (score <= 40) {
-    core = `Momentum is weak with no clear reversal signal yet. Wait for either RSI to turn up from an oversold level, or a confirmed bounce, before considering an entry.`;
+    if (rsi != null && rsi < 45) {
+      core = `Momentum is weak with no clear reversal signal yet. Wait for either RSI to turn up from here, or a confirmed bounce, before considering an entry.`;
+    } else {
+      // RSI isn't actually what's dragging the score down here — find what
+      // is, rather than defaulting to an oversold-RSI framing that
+      // wouldn't be true (RSI sits in a neutral or elevated range).
+      const draggers = signals.filter((s) => s.type === 'caution' || s.type === 'watch').map((s) => s.label);
+      const reason = draggers.length
+        ? ` The drag here is coming from ${draggers.slice(0, 2).join(' and ')} — not an oversold RSI reading (RSI is a fairly neutral ${rsi ?? '—'}).`
+        : ` RSI itself is fairly neutral here (${rsi ?? '—'}) — the weak score reflects trend context (moving averages, Bollinger position) rather than an oversold reading.`;
+      core = `Momentum is weak with no clear reversal signal yet.${reason} Wait for a clearer signal before considering an entry.`;
+    }
   } else {
     core = `No strong setup right now on this timeframe — RSI is neutral at ${rsi ?? '—'}.${fib ? ` Worth checking back if price approaches the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}).` : ''}`;
   }
