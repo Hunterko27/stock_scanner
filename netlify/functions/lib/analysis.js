@@ -746,7 +746,8 @@ function buildGuidance(tf4h, tf1d, tf1w) {
       core = `Momentum is weak with no clear reversal signal yet.${reason} Wait for a clearer signal before considering an entry.`;
     }
   } else {
-    core = `No strong setup right now on this timeframe — RSI is neutral at ${rsi ?? '—'}.${fib ? ` Worth checking back if price approaches the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}).` : ''}`;
+    const rsiDescriptor = rsi == null ? null : rsi < 45 ? 'recovering' : rsi > 60 ? 'warming up' : 'neutral';
+    core = `No strong setup right now on this timeframe — RSI is ${rsiDescriptor ?? 'unavailable'}${rsi != null ? ` at ${rsi}` : ''}.${fib ? ` Worth checking back if price approaches the golden zone (${fmt(fib.goldenLow)}\u2013${fmt(fib.goldenHigh)}).` : ''}`;
   }
 
   // Say which timeframe is being described whenever it isn't the obvious
