@@ -291,36 +291,6 @@ main { max-width: 1160px; margin: 0 auto; padding: 28px 20px 60px; }
 }
 .pe-result.warn { color: var(--brick); font-weight: 600; }
 
-.news-sentiment-btn {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  border-radius: 6px;
-  padding: 5px 10px;
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-.news-sentiment-btn:hover { border-color: var(--gold); color: var(--text); }
-.news-sentiment-btn:disabled { opacity: 0.5; cursor: default; }
-
-.news-sentiment-result {
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  margin-top: 6px;
-  line-height: 1.5;
-}
-.news-sentiment-result.warn { color: var(--brick); font-weight: 600; }
-.news-sentiment-result .count-bullish { color: var(--sage); font-weight: 600; }
-.news-sentiment-result .count-bearish { color: var(--brick); font-weight: 600; }
-.news-sentiment-result .count-neutral { color: var(--text-dim); font-weight: 600; }
-.news-sentiment-result .notable-headline {
-  display: block;
-  margin-top: 4px;
-  color: var(--text);
-  text-decoration: none;
-}
-.news-sentiment-result .notable-headline:hover { color: var(--gold); }
-
 .sparkline-wrap { height: 54px; margin: 12px 0 8px; }
 
 .tf-tabs {

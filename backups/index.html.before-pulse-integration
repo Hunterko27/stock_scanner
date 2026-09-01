@@ -89,11 +89,6 @@
       <span class="earnings-note">via Yahoo Finance — can occasionally fail</span>
     </div>
     <div class="pe-result"></div>
-    <div class="earnings-row">
-      <button class="news-sentiment-btn">Check news sentiment</button>
-      <span class="earnings-note">via Pulse — can occasionally fail</span>
-    </div>
-    <div class="news-sentiment-result"></div>
   </article>
 </template>
 

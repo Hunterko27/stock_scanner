@@ -26,6 +26,11 @@
   to = "/.netlify/functions/pe-ratio"
   status = 200
 
+[[redirects]]
+  from = "/api/news-sentiment"
+  to = "/.netlify/functions/news-sentiment"
+  status = 200
+
 [[headers]]
   for = "/*"
   [headers.values]

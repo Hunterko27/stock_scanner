@@ -284,6 +284,19 @@ git add . && git commit -m "Revert cross-timeframe golden-zone scoring" && git p
 This file lives outside `netlify/functions/` on purpose (it's in a root-level
 `backups/` folder) so Netlify never mistakes it for a deployable function.
 
+- **News sentiment check (opt-in, manual only)**: a "Check news sentiment" button on
+  each card calls a companion app, [Pulse](https://pulsestocks123.netlify.app), which
+  scores recent headlines bullish/bearish/neutral via keyword matching. The call
+  happens **server-side** (Confluence's own `news-sentiment.js` function calls Pulse's
+  public API directly) specifically to avoid CORS — no changes were needed on Pulse's
+  side at all. Results show the **full honest breakdown** (e.g. "1 bullish, 0 bearish,
+  8 neutral") rather than only surfacing bullish/bearish headlines and quietly hiding
+  neutral ones, which would make sentiment look more one-sided than it actually is.
+  Purely informational — **does not affect the technical score** in any way. Cached 30
+  minutes per symbol (Pulse itself already refreshes roughly hourly). Same reliability
+  caveat as the P/E check: Pulse's news comes from Yahoo Finance, which can
+  occasionally be flaky.
+
 ## Known limitations / things to keep an eye on
 
 - Free-tier rate limits mean loading is intentionally paced (~4 stocks/minute) — a

@@ -402,63 +402,6 @@ function renderCardResult(card, analysis) {
       peBtn.textContent = 'Check P/E ratio';
     }
   });
-
-  const newsBtn = el('.news-sentiment-btn', card);
-  const newsResult = el('.news-sentiment-result', card);
-  newsBtn.addEventListener('click', async () => {
-    newsBtn.disabled = true;
-    newsBtn.textContent = 'Checking…';
-    newsResult.textContent = '';
-    newsResult.className = 'news-sentiment-result';
-    try {
-      const res = await fetch(`/api/news-sentiment?symbol=${encodeURIComponent(analysis.symbol)}`);
-      const data = await res.json();
-      if (!res.ok) {
-        newsResult.textContent = data.error || 'Could not check news sentiment.';
-        newsResult.className = 'news-sentiment-result warn';
-      } else if (!data.totalArticles) {
-        newsResult.textContent = 'No recent headlines found for this symbol.';
-      } else {
-        // Built with DOM APIs rather than innerHTML — headline titles are
-        // external content, and textContent keeps that safe by default.
-        newsResult.innerHTML = '';
-        const summary = document.createElement('span');
-        summary.appendChild(document.createTextNode('Recent headlines ('));
-        const b = document.createElement('span');
-        b.className = 'count-bullish';
-        b.textContent = `${data.counts.bullish} bullish`;
-        summary.appendChild(b);
-        summary.appendChild(document.createTextNode(', '));
-        const r = document.createElement('span');
-        r.className = 'count-bearish';
-        r.textContent = `${data.counts.bearish} bearish`;
-        summary.appendChild(r);
-        summary.appendChild(document.createTextNode(', '));
-        const n = document.createElement('span');
-        n.className = 'count-neutral';
-        n.textContent = `${data.counts.neutral} neutral`;
-        summary.appendChild(n);
-        summary.appendChild(document.createTextNode(`) — out of ${data.totalArticles} total.`));
-        newsResult.appendChild(summary);
-
-        if (data.notable) {
-          const link = document.createElement('a');
-          link.className = 'notable-headline';
-          link.href = data.notable.link || '#';
-          link.target = '_blank';
-          link.rel = 'noopener noreferrer';
-          link.textContent = `${data.notable.sentiment.label}: "${data.notable.title}"`;
-          newsResult.appendChild(link);
-        }
-      }
-    } catch (err) {
-      newsResult.textContent = 'Could not check news sentiment — try again shortly.';
-      newsResult.className = 'news-sentiment-result warn';
-    } finally {
-      newsBtn.disabled = false;
-      newsBtn.textContent = 'Check news sentiment';
-    }
-  });
 }
 
 async function renderList(symbols, gridId, emptyId, target, forceRefresh = false) {
